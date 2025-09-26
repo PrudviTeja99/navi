@@ -1,0 +1,193 @@
+#!/bin/bash
+# Navi - Omarchy-like interactive package manager for CachyOS
+# Features: CamelCase fuzzy menus, sudo upfront, interactive/auto-confirm (-y/-n),
+# CLI args, fuzzy package search with preview, and sleep inhibition during updates.
+
+set -e
+
+show_help() {
+    cat <<EOF
+Navi - Interactive Package Manager Wrapper
+
+Usage:
+  navi [ACTION] [SOURCE] [OPTIONS]
+
+Actions:
+  Install     Install packages
+  Remove      Remove installed packages
+  Update      Update all packages (pacman, AUR, Flatpak)
+
+Sources:
+  pacman      Use pacman for official repo packages
+  paru        Use paru for AUR packages
+
+Options:
+  -y, --yes   Auto-confirm all prompts (assume "yes")
+  -n, --no    Auto-decline all prompts (assume "no")
+  -h, --help  Show this help message and exit
+
+Examples:
+  navi                # Start interactive fuzzy menu
+  navi install pacman # Install package(s) from official repos
+  navi remove paru    # Remove package(s) installed via AUR
+  navi update -y      # Update everything without prompts
+
+Notes:
+  * If no ACTION or SOURCE is provided, fuzzy menus will guide you.
+  * Package descriptions are shown in preview with Ctrl-P toggle.
+  * Updates run under systemd-inhibit to prevent sleep/idle.
+EOF
+    exit 0
+}
+
+
+# --- Step 0: Handle help option ---
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help) show_help ;;
+    esac
+done
+
+# --- Step 1: Ask for sudo once at the start ---
+sudo -v
+while true; do sudo -v; sleep 60; done 2>/dev/null &
+SUDO_LOOP_PID=$!
+trap "kill $SUDO_LOOP_PID" EXIT
+
+# --- Step 2: Check dependencies ---
+for cmd in fzf paru pacman; do
+    if ! command -v $cmd &>/dev/null; then
+        echo "Error: $cmd is required but not installed."
+        exit 1
+    fi
+done
+
+# --- Step 3: Parse -y / -n for auto-confirm ---
+AUTO_CONFIRM="ask" # default interactive
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) AUTO_CONFIRM="yes" ;;
+        -n|--no)  AUTO_CONFIRM="no" ;;
+    esac
+done
+
+# --- Step 4: Determine action (fuzzy/CamelCase or argument) ---
+if [[ "$1" =~ ^(install|remove|update)$ ]]; then
+    action="$1"
+    action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
+else
+    action_display=$(printf "Install\nRemove\nUpdate" | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
+    [[ -z "$action_display" ]] && action_display="Install"
+    action=$(echo "$action_display" | tr '[:upper:]' '[:lower:]')
+fi
+
+# --- Step 5: Determine source (fuzzy/CamelCase or argument) ---
+if [[ "$2" =~ ^(pacman|paru)$ ]]; then
+    source="$2"
+    source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
+else
+    source_display=$(printf "Pacman\nParu" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
+    [[ -z "$source_display" ]] && source_display="Pacman"
+    source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
+fi
+
+# --- Step 6: Package operation functions ---
+pkg_install() {
+    local pkg="$1"
+    if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+        [[ "$source" == "pacman" ]] && sudo pacman -S "$pkg" --noconfirm
+        [[ "$source" == "paru" ]] && paru -S "$pkg" --noconfirm
+    elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+        echo "Skipping installation of $pkg as per -n option"
+    else
+        read -rp "Install $pkg? [y/N]: " ans
+        if [[ "$ans" =~ ^[Yy]$ ]]; then
+            [[ "$source" == "pacman" ]] && sudo pacman -S "$pkg"
+            [[ "$source" == "paru" ]] && paru -S "$pkg"
+        else
+            echo "Skipping $pkg"
+        fi
+    fi
+}
+
+pkg_remove() {
+    local pkg="$1"
+    if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+        [[ "$source" == "pacman" ]] && sudo pacman -Rns "$pkg" --noconfirm
+        [[ "$source" == "paru" ]] && paru -Rns "$pkg" --noconfirm
+    elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+        echo "Skipping removal of $pkg as per -n option"
+    else
+        read -rp "Remove $pkg? [y/N]: " ans
+        if [[ "$ans" =~ ^[Yy]$ ]]; then
+            [[ "$source" == "pacman" ]] && sudo pacman -Rns "$pkg"
+            [[ "$source" == "paru" ]] && paru -Rns "$pkg"
+        else
+            echo "Skipping $pkg"
+        fi
+    fi
+}
+
+update_packages() {
+    echo "Updating packages (sleep/idle inhibited)..."
+    systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
+        echo 'Updating pacman packages...'
+        if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then sudo pacman -Syu --noconfirm; else sudo pacman -Syu; fi
+
+        echo 'Updating AUR packages...'
+        if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then paru -Syu --noconfirm; else paru -Syu; fi
+
+        if command -v flatpak &>/dev/null; then
+            echo 'Updating Flatpak packages...'
+            if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then flatpak update -y; else flatpak update; fi
+        else
+            echo 'Flatpak not installed, skipping...'
+        fi
+
+        echo 'All packages updated.'
+    "
+}
+
+# --- Step 7: Run update directly ---
+if [[ "$action" == "update" ]]; then
+    update_packages
+    exit 0
+fi
+
+# --- Step 8: Build package list ---
+if [[ "$action" == "remove" ]]; then
+    if [[ "$source" == "pacman" ]]; then
+        pkg_list=$(pacman -Qq)
+    else
+        pkg_list=$(paru -Qq)
+    fi
+else
+    if [[ "$source" == "pacman" ]]; then
+        pkg_list=$(pacman -Slq | sort -u)
+    else
+        pkg_list=$(paru -Slq | sort -u)
+    fi
+fi
+
+# --- Step 9: Fuzzy select packages with preview ---
+pkg=$(echo "$pkg_list" | fzf \
+    --multi \
+    --height=100% \
+    --layout=reverse \
+    --border \
+    --prompt="[$source_display] $action_display: " \
+    --preview "$([[ $source == 'pacman' ]] && echo 'pacman -Si {}' || echo 'paru -Si {}')" \
+    --bind "ctrl-p:toggle-preview"
+)
+
+[[ -z "$pkg" ]] && { echo "No package selected."; exit 0; }
+
+# --- Step 10: Perform selected action ---
+while read -r p; do
+    if [[ "$action" == "install" ]]; then
+        pkg_install "$p"
+    elif [[ "$action" == "remove" ]]; then
+        pkg_remove "$p"
+    fi
+done <<< "$pkg"
+
