@@ -93,43 +93,79 @@ fi
 
 # --- Step 6: Package operation functions ---
 pkg_install() {
-    local pkg="$1"
+    local pkgs="$1"
+    local GREEN="\e[32m"
+    local YELLOW="\e[33m"
+    local RESET="\e[0m"
+
+    # Trim leading/trailing spaces and trailing newline
+    pkgs=$(echo "$pkgs" | xargs)       # removes leading/trailing spaces
+    pkgs="${pkgs%$'\n'}"                # removes trailing newline
+
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-        [[ "$source" == "pacman" ]] && sudo pacman -S "$pkg" --noconfirm
-        [[ "$source" == "paru" ]] && paru -S "$pkg" --noconfirm
+            if [[ "$source" == "pacman" ]]; then
+                sudo pacman -S "$pkgs" --noconfirm
+            elif [[ "$source" == "paru" ]]; then
+                paru -S "$pkgs" --noconfirm
+            fi
+        echo -e "${GREEN}Installed: $pkgs${RESET}"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        echo "Skipping installation of $pkg as per -n option"
+        echo -e "${YELLOW}Skipping installation: $pkgs${RESET}"
     else
-        read -rp "Install $pkg? [y/N]: " ans
+        read -rp "Install $pkgs? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            [[ "$source" == "pacman" ]] && sudo pacman -S "$pkg"
-            [[ "$source" == "paru" ]] && paru -S "$pkg"
+            if [[ "$source" == "pacman" ]]; then
+                sudo pacman -S "$pkgs" --noconfirm
+            elif [[ "$source" == "paru" ]]; then
+                paru -S "$pkgs" --noconfirm
+            fi
+            echo -e "${GREEN}Installed: $pkgs${RESET}"
         else
-            echo "Skipping $pkg"
+            echo -e "${YELLOW}Skipping installation: $pkgs${RESET}"
         fi
     fi
 }
 
 pkg_remove() {
-    local pkg="$1"
+    local pkgs="$1"
+    local GREEN="\e[32m"
+    local YELLOW="\e[33m"
+    local RESET="\e[0m"
+
+    # Trim leading/trailing spaces and trailing newline
+    pkgs=$(echo "$pkgs" | xargs)       # removes leading/trailing spaces
+    pkgs="${pkgs%$'\n'}"                # removes trailing newline
+
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-        [[ "$source" == "pacman" ]] && sudo pacman -Rns "$pkg" --noconfirm
-        [[ "$source" == "paru" ]] && paru -Rns "$pkg" --noconfirm
+        if [[ "$source" == "pacman" ]]; then
+                sudo pacman -Rns "$pkgs" --noconfirm
+            elif [[ "$source" == "paru" ]]; then
+                paru -Rns "$pkgs" --noconfirm
+            fi
+        echo -e "${RED}Removed: $pkgs ${RESET}"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        echo "Skipping removal of $pkg as per -n option"
+        echo -e "${YELLOW}Skipping removal: $pkgs${RESET}"
     else
-        read -rp "Remove $pkg? [y/N]: " ans
+        read -rp "Remove $pkg? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            [[ "$source" == "pacman" ]] && sudo pacman -Rns "$pkg"
-            [[ "$source" == "paru" ]] && paru -Rns "$pkg"
+            if [[ "$source" == "pacman" ]]; then
+                sudo pacman -Rns "$pkg" --noconfirm
+            elif [[ "$source" == "paru" ]]; then
+                paru -Rns "$pkg" --noconfirm
+            fi
+            echo -e "${RED}Removed: $pkgs ${RESET}"
         else
-            echo "Skipping $pkg"
+            echo -e "${YELLOW}Skipping removal: $pkgs${RESET}"
         fi
     fi
 }
 
 update_packages() {
-    echo "Updating packages (sleep/idle inhibited)..."
+    local YELLOW="\e[33m"
+    local RESET="\e[0m"
+    local GREEN="\e[32m"
+
+    echo -e "${YELLOW}Updating packages (sleep/idle inhibited)...${RESET}"
     systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
         echo 'Updating pacman packages...'
         if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then sudo pacman -Syu --noconfirm; else sudo pacman -Syu; fi
@@ -144,7 +180,7 @@ update_packages() {
             echo 'Flatpak not installed, skipping...'
         fi
 
-        echo 'All packages updated.'
+        echo '${GREEN}All packages updated.${RESET}'
     "
 }
 
@@ -176,18 +212,20 @@ pkg=$(echo "$pkg_list" | fzf \
     --layout=reverse \
     --border \
     --prompt="[$source_display] $action_display: " \
-    --preview "$([[ $source == 'pacman' ]] && echo 'pacman -Si {}' || echo 'paru -Si {}')" \
+    --preview "if [[ $source == pacman ]]; then pacman -Si {}; else paru -Si {}; fi" \
     --bind "ctrl-p:toggle-preview"
 )
+
 
 [[ -z "$pkg" ]] && { echo "No package selected."; exit 0; }
 
 # --- Step 10: Perform selected action ---
-while read -r p; do
-    if [[ "$action" == "install" ]]; then
-        pkg_install "$p"
-    elif [[ "$action" == "remove" ]]; then
-        pkg_remove "$p"
-    fi
-done <<< "$pkg"
+# Convert newline-separated fzf selection into space-separated list
+selected_pkgs=$(echo "$pkg" | tr '\n' ' ')
+
+if [[ "$action" == "install" ]]; then
+    pkg_install "$selected_pkgs"
+elif [[ "$action" == "remove" ]]; then
+    pkg_remove "$selected_pkgs"
+fi
 
