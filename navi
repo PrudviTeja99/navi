@@ -3,8 +3,15 @@
 # Features: CamelCase fuzzy menus, sudo upfront, interactive/auto-confirm (-y/-n),
 # CLI args, fuzzy package search with preview, and sleep inhibition during updates.
 
-set -e
+set -euo pipefail
 
+# --- Colors (defined once globally) ---
+GREEN="\e[32m"
+YELLOW="\e[33m"
+RED="\e[31m"
+RESET="\e[0m"
+
+# --- Show help ---
 show_help() {
     cat <<EOF
 Navi - Interactive Package Manager Wrapper
@@ -13,18 +20,19 @@ Usage:
   navi [ACTION] [SOURCE] [OPTIONS]
 
 Actions:
-  Install     Install packages
-  Remove      Remove installed packages
-  Update      Update all packages (pacman, AUR, Flatpak)
+  install     Install packages
+  remove      Remove installed packages
+  update      Update all packages (pacman, AUR, Flatpak)
 
 Sources:
   pacman      Use pacman for official repo packages
   paru        Use paru for AUR packages
 
 Options:
-  -y, --yes   Auto-confirm all prompts (assume "yes")
-  -n, --no    Auto-decline all prompts (assume "no")
-  -h, --help  Show this help message and exit
+  -y, --yes     Auto-confirm all prompts (assume "yes")
+  -n, --no      Auto-decline all prompts (assume "no")
+  --dry-run     Show what would be done without executing
+  -h, --help    Show this help message and exit
 
 Examples:
   navi                # Start interactive fuzzy menu
@@ -40,251 +48,252 @@ EOF
     exit 0
 }
 
-
-# --- Step 0: Handle help option ---
+# --- Parse help ---
 for arg in "$@"; do
     case "$arg" in
         -h|--help) show_help ;;
     esac
 done
 
-# --- Step 1: Ask for sudo once at the start ---
+# --- Sudo upfront & keep alive ---
 sudo -v
 while true; do sudo -v; sleep 60; done 2>/dev/null &
 SUDO_LOOP_PID=$!
-trap "kill $SUDO_LOOP_PID" EXIT
+trap "kill $SUDO_LOOP_PID" EXIT INT TERM
 
-# --- Step 2: Check dependencies ---
+# --- Check dependencies ---
 for cmd in fzf paru pacman; do
-    if ! command -v $cmd &>/dev/null; then
+    if ! command -v "$cmd" &>/dev/null; then
         echo "Error: $cmd is required but not installed."
         exit 1
     fi
 done
+HAS_FLATPAK=false
+command -v flatpak &>/dev/null && HAS_FLATPAK=true
 
-# --- Step 3: Parse -y / -n for auto-confirm ---
+# --- Parse options ---
 AUTO_CONFIRM="ask" # default interactive
+DRY_RUN=false
 for arg in "$@"; do
     case "$arg" in
         -y|--yes) AUTO_CONFIRM="yes" ;;
         -n|--no)  AUTO_CONFIRM="no" ;;
+        --dry-run) DRY_RUN=true ;;
     esac
 done
 
-# --- Step 4: Determine action (fuzzy/CamelCase or argument) ---
-if [[ "$1" =~ ^(install|remove|update)$ ]]; then
-    action="$1"
-    action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
-else
-    action_display=$(printf "Install\nRemove\nUpdate" | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
-    [[ -z "$action_display" ]] && action_display="Install"
-    action=$(echo "$action_display" | tr '[:upper:]' '[:lower:]')
-fi
+# --- Determine action ---
+action_input="${1:-}"
 
-# --- Step 5: Determine source (skip for update) ---
+case "$action_input" in
+    i) action="install" ;;
+    r) action="remove" ;;
+    u) action="update" ;;
+    install|remove|update) action="$action_input" ;;
+    "") 
+        action_display=$(printf "Install\nRemove\nUpdate" | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
+        [[ -z "$action_display" ]] && action_display="Install"
+        action=$(echo "$action_display" | tr '[:upper:]' '[:lower:]')
+        ;;
+    *)
+        echo "Unknown action: $action_input"
+        exit 1
+        ;;
+esac
+action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
+
+
+# --- Determine source (skip for update) ---
 if [[ "$action" != "update" ]]; then
-    if [[ "$2" =~ ^(pacman|paru)$ ]]; then
-        source="$2"
-        source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
-    else
-        source_display=$(printf "Pacman\nParu" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
-        [[ -z "$source_display" ]] && source_display="Pacman"
-        source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
-    fi
+    source_input="${2:-}"
+    case "$source_input" in
+        p) source="pacman" ;;
+        a) source="paru" ;;
+        f) 
+            if $HAS_FLATPAK; then
+                source="flatpak"
+            else
+                echo "Flatpak not installed."
+                exit 1
+            fi
+            ;;
+        pacman|paru|flatpak) 
+            if [[ "$source_input" == "flatpak" && "$HAS_FLATPAK" == false ]]; then
+                echo "Flatpak not installed."
+                exit 1
+            fi
+            source="$source_input"
+            ;;
+        "")
+            # Interactive menu
+            source_display=$(printf "Pacman\nParu\nFlatpak" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
+            [[ -z "$source_display" ]] && source_display="Pacman"
+            source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
+            ;;
+        *)
+            echo "Unknown source: $source_input"
+            exit 1
+            ;;
+    esac
+    source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
 fi
 
-# --- Step 6: Package operation functions ---
-pkg_install() {
-    local pkgs="$1"
-    local GREEN="\e[32m"
-    local YELLOW="\e[33m"
-    local RESET="\e[0m"
 
-    # Trim leading/trailing spaces and trailing newline
-    pkgs=$(echo "$pkgs" | xargs)       # removes leading/trailing spaces
-    pkgs="${pkgs%$'\n'}"                # removes trailing newline
+# --- Helper for package operations (install/remove) ---
+pkg_action() {
+    local op="$1"  # install/remove
+    local pkgs="$2"
 
+    pkgs=$(echo "$pkgs" | xargs) # trim
+    [[ -z "$pkgs" ]] && return
+
+    local cmd=""
+    if [[ "$op" == "install" ]]; then
+        case "$source" in
+            pacman) cmd="sudo pacman -S $pkgs" ;;
+            paru)   cmd="paru -S $pkgs" ;;
+            flatpak) cmd="flatpak install -y $pkgs" ;;
+        esac
+    else  # remove
+        case "$source" in
+            pacman) cmd="sudo pacman -Rns $pkgs" ;;
+            paru)   cmd="paru -Rns $pkgs" ;;
+            flatpak)
+                # Ask user if they want to remove user data
+                if [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    read -rp "Also delete Flatpak user data for $pkgs? [y/N]: " delete_data_ans < /dev/tty
+                    if [[ "$delete_data_ans" =~ ^[Yy]$ ]]; then
+                        cmd="flatpak uninstall --delete-data -y $pkgs"
+                    else
+                        cmd="flatpak uninstall -y $pkgs"
+                    fi
+                elif [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    cmd="flatpak uninstall --delete-data -y $pkgs"
+                else
+                    echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
+                    return
+                fi
+                ;;
+        esac
+    fi
+
+
+
+    # Apply confirm / dry-run logic
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-            if [[ "$source" == "pacman" ]]; then
-                sudo pacman -S "$pkgs" --noconfirm
-            elif [[ "$source" == "paru" ]]; then
-                paru -S "$pkgs" --noconfirm
-            fi
-        echo -e "${GREEN}Installed: $pkgs${RESET}"
+        $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
+        echo -e "${GREEN}Done: $pkgs${RESET}"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        echo -e "${YELLOW}Skipping installation: $pkgs${RESET}"
+        echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
     else
-        read -rp "Install $pkgs? [y/N]: " ans < /dev/tty
+        read -rp "$op $pkgs? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            if [[ "$source" == "pacman" ]]; then
-                sudo pacman -S "$pkgs" --noconfirm
-            elif [[ "$source" == "paru" ]]; then
-                paru -S "$pkgs" --noconfirm
-            fi
-            echo -e "${GREEN}Installed: $pkgs${RESET}"
+            $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
+            echo -e "${GREEN}Done: $pkgs${RESET}"
         else
-            echo -e "${YELLOW}Skipping installation: $pkgs${RESET}"
+            echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
         fi
     fi
 }
 
-pkg_remove() {
-    local pkgs="$1"
-    local GREEN="\e[32m"
-    local YELLOW="\e[33m"
-    local RESET="\e[0m"
 
-    # Trim leading/trailing spaces and trailing newline
-    pkgs=$(echo "$pkgs" | xargs)       # removes leading/trailing spaces
-    pkgs="${pkgs%$'\n'}"                # removes trailing newline
-
-    if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-        if [[ "$source" == "pacman" ]]; then
-                sudo pacman -Rns "$pkgs" --noconfirm
-            elif [[ "$source" == "paru" ]]; then
-                paru -Rns "$pkgs" --noconfirm
-            fi
-        echo -e "${RED}Removed: $pkgs ${RESET}"
-    elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        echo -e "${YELLOW}Skipping removal: $pkgs${RESET}"
-    else
-        read -rp "Remove $pkg? [y/N]: " ans < /dev/tty
-        if [[ "$ans" =~ ^[Yy]$ ]]; then
-            if [[ "$source" == "pacman" ]]; then
-                sudo pacman -Rns "$pkgs" --noconfirm
-            elif [[ "$source" == "paru" ]]; then
-                paru -Rns "$pkgs" --noconfirm
-            fi
-            echo -e "${RED}Removed: $pkgs ${RESET}"
-        else
-            echo -e "${YELLOW}Skipping removal: $pkgs${RESET}"
-        fi
-    fi
-}
-
+# --- Update packages ---
 update_packages() {
-    local GREEN="\e[32m"
-    local YELLOW="\e[33m"
-    local RED="\e[31m"
-    local RESET="\e[0m"
-
-    # --- Temporarily disable exit-on-error ---
     set +e
-
-    # Fetch available updates
-    pacman_updates=$(sudo pacman -Syu)
-    aur_updates=$(paru -Sya)
+    pacman_updates=$(checkupdates 2>/dev/null | awk '{print $1}')
+    aur_updates=$(paru -Qua 2>/dev/null | sed 's/^ *//' | sed 's/ \+/ /g' | grep -vw "\[ignored\]$" | awk '{print $1}')
     flatpak_updates=""
-    if command -v flatpak &>/dev/null; then
-        flatpak_updates=$(flatpak update)
-    fi
-
+    $HAS_FLATPAK && flatpak_updates=$(flatpak update --appstream | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d')
     set -e
-    # --- Re-enable exit-on-error ---
 
-    # Display updates grouped by manager
-    if [[ -n "$pacman_updates" ]]; then
-        echo -e "\n${GREEN}--- Pacman Packages ---${RESET}"
-        echo "$pacman_updates"
-    fi
-    if [[ -n "$aur_updates" ]]; then
-        echo -e "\n${GREEN}--- AUR Packages ---${RESET}"
-        echo "$aur_updates"
-    fi
-    if [[ -n "$flatpak_updates" ]]; then
-        echo -e "\n${GREEN}--- Flatpak Packages ---${RESET}"
-        echo "$flatpak_updates"
-    fi
+    # Combine for preview
+    updates_preview=""
+    [[ -n "$pacman_updates" ]] && updates_preview+="\n${GREEN}--- Pacman Updates ---${RESET}\n$pacman_updates"
+    [[ -n "$aur_updates" ]] && updates_preview+="\n${GREEN}--- AUR Updates ---${RESET}\n$aur_updates"
+    [[ -n "$flatpak_updates" ]] && updates_preview+="\n${GREEN}--- Flatpak Updates ---${RESET}\n$flatpak_updates"
 
-    # Determine commands based on AUTO_CONFIRM
-    local pacman_cmd="sudo pacman -Syu"
-    local paru_cmd="paru -Syu"
-    local flatpak_cmd="flatpak update"
-
-    if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-        pacman_cmd+=" --noconfirm"
-        paru_cmd+=" --noconfirm"
-        flatpak_cmd+=" -y"
-    elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        echo -e "${YELLOW}Skipping all updates${RESET}"
+    if [[ -z "$updates_preview" ]]; then
+        echo -e "${GREEN}All packages are up-to-date.${RESET}"
         return
-    else
-        # ask mode: get confirmation
+    fi
+
+    # Show preview
+    echo -e "$updates_preview"
+
+    # Ask user to proceed if AUTO_CONFIRM=ask
+    if [[ "$AUTO_CONFIRM" == "ask" ]]; then
         read -rp $'\nProceed with updating all packages? [y/N]: ' ans < /dev/tty
-        if [[ ! "$ans" =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}Skipping all updates.${RESET}"
-            return
-        fi
-        # If user confirmed, add noconfirm flags
-        pacman_cmd+=" --noconfirm"
-        paru_cmd+=" --noconfirm"
-        flatpak_cmd+=" -y"
+        [[ ! "$ans" =~ ^[Yy]$ ]] && { echo -e "${YELLOW}Skipping all updates.${RESET}"; return; }
+    elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+        echo -e "${YELLOW}Skipping all updates.${RESET}"; return;
     fi
 
     echo -e "${YELLOW}Updating packages (sleep/idle inhibited)...${RESET}"
+    pacman_cmd="sudo pacman -Syu --noconfirm"
+    paru_cmd="paru -Sya --noconfirm"
+    flatpak_cmd="flatpak update -y"
 
-    # Run updates under systemd-inhibit
-    systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
-        echo -e '${GREEN}--- Updating Pacman Packages ---${RESET}'
-        $pacman_cmd
-
-        echo -e '${GREEN}--- Updating AUR Packages ---${RESET}'
-        $paru_cmd
-
-        if command -v flatpak &>/dev/null; then
-            echo -e '${GREEN}--- Updating Flatpak Packages ---${RESET}'
-            $flatpak_cmd
-        else
-            echo -e '${YELLOW}Flatpak not installed, skipping...${RESET}'
-        fi
-
-        echo -e '${GREEN}All updates completed.${RESET}'
-    "
+    if $DRY_RUN; then
+        echo "[DRY-RUN] $pacman_cmd"
+        echo "[DRY-RUN] $paru_cmd"
+        $HAS_FLATPAK && echo "[DRY-RUN] $flatpak_cmd"
+    else
+        systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
+            echo -e '${GREEN}--- Updating Pacman Packages ---${RESET}'
+            $pacman_cmd
+            echo -e '${GREEN}--- Updating AUR Packages ---${RESET}'
+            $paru_cmd
+            if $HAS_FLATPAK; then
+                echo -e '${GREEN}--- Updating Flatpak Packages ---${RESET}'
+                $flatpak_cmd
+            fi
+            echo -e '${GREEN}All updates completed.${RESET}'
+        "
+    fi
 }
 
 
-# --- Step 7: Run update directly ---
+# --- Run update directly ---
 if [[ "$action" == "update" ]]; then
     update_packages
     exit 0
 fi
 
-# --- Step 8: Build package list ---
+# --- Build package list ---
 if [[ "$action" == "remove" ]]; then
-    if [[ "$source" == "pacman" ]]; then
-        pkg_list=$(pacman -Qq)
-    else
-        pkg_list=$(paru -Qq)
-    fi
+    case "$source" in
+        pacman) pkg_list=$(pacman -Qq) ;;
+        paru)   pkg_list=$(paru -Qq) ;;
+        flatpak) pkg_list=$(flatpak list --app --columns=application) ;;
+    esac
 else
-    if [[ "$source" == "pacman" ]]; then
-        pkg_list=$(pacman -Slq | sort -u)
-    else
-        pkg_list=$(paru -Slq | sort -u)
-    fi
+    case "$source" in
+        pacman) pkg_list=$(pacman -Slq) ;;
+        paru)   pkg_list=$(paru -Slq) ;;
+        flatpak) pkg_list=$(flatpak search "" | awk '{print $1}') ;;  # simple search for all
+    esac
 fi
 
-# --- Step 9: Fuzzy select packages with preview ---
+# --- Fuzzy select packages ---
 pkg=$(echo "$pkg_list" | fzf \
     --multi \
     --height=100% \
     --layout=reverse \
     --border \
     --prompt="[$source_display] $action_display: " \
-    --preview "if [[ $source == pacman ]]; then pacman -Si {}; else paru -Si {}; fi" \
+    --preview "if [[ '$source' == 'pacman' ]]; then
+              pacman -Si {};
+          elif [[ '$source' == 'paru' ]]; then
+              paru -Si {};
+          else
+            flatpak info {} 2>/dev/null || flatpak search {} --columns=application,description | head -n 1
+          fi" \
     --bind "ctrl-p:toggle-preview"
 )
 
-
 [[ -z "$pkg" ]] && { echo "No package selected."; exit 0; }
 
-# --- Step 10: Perform selected action ---
-# Convert newline-separated fzf selection into space-separated list
 selected_pkgs=$(echo "$pkg" | tr '\n' ' ')
 
-if [[ "$action" == "install" ]]; then
-    pkg_install "$selected_pkgs"
-elif [[ "$action" == "remove" ]]; then
-    pkg_remove "$selected_pkgs"
-fi
-
+# --- Perform selected action ---
+pkg_action "$action" "$selected_pkgs"
