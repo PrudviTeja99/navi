@@ -81,14 +81,16 @@ else
     action=$(echo "$action_display" | tr '[:upper:]' '[:lower:]')
 fi
 
-# --- Step 5: Determine source (fuzzy/CamelCase or argument) ---
-if [[ "$2" =~ ^(pacman|paru)$ ]]; then
-    source="$2"
-    source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
-else
-    source_display=$(printf "Pacman\nParu" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
-    [[ -z "$source_display" ]] && source_display="Pacman"
-    source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
+# --- Step 5: Determine source (skip for update) ---
+if [[ "$action" != "update" ]]; then
+    if [[ "$2" =~ ^(pacman|paru)$ ]]; then
+        source="$2"
+        source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
+    else
+        source_display=$(printf "Pacman\nParu" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
+        [[ -z "$source_display" ]] && source_display="Pacman"
+        source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
+    fi
 fi
 
 # --- Step 6: Package operation functions ---
@@ -180,7 +182,7 @@ update_packages() {
             echo 'Flatpak not installed, skipping...'
         fi
 
-        echo '${GREEN}All packages updated.${RESET}'
+        echo -e '${GREEN}All packages updated.${RESET}'
     "
 }
 
