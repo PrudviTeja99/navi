@@ -151,9 +151,9 @@ pkg_remove() {
         read -rp "Remove $pkg? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
             if [[ "$source" == "pacman" ]]; then
-                sudo pacman -Rns "$pkg" --noconfirm
+                sudo pacman -Rns "$pkgs" --noconfirm
             elif [[ "$source" == "paru" ]]; then
-                paru -Rns "$pkg" --noconfirm
+                paru -Rns "$pkgs" --noconfirm
             fi
             echo -e "${RED}Removed: $pkgs ${RESET}"
         else
@@ -163,28 +163,85 @@ pkg_remove() {
 }
 
 update_packages() {
-    local YELLOW="\e[33m"
-    local RESET="\e[0m"
     local GREEN="\e[32m"
+    local YELLOW="\e[33m"
+    local RED="\e[31m"
+    local RESET="\e[0m"
+
+    # --- Temporarily disable exit-on-error ---
+    set +e
+
+    # Fetch available updates
+    pacman_updates=$(sudo pacman -Syu)
+    aur_updates=$(paru -Sya)
+    flatpak_updates=""
+    if command -v flatpak &>/dev/null; then
+        flatpak_updates=$(flatpak update)
+    fi
+
+    set -e
+    # --- Re-enable exit-on-error ---
+
+    # Display updates grouped by manager
+    if [[ -n "$pacman_updates" ]]; then
+        echo -e "\n${GREEN}--- Pacman Packages ---${RESET}"
+        echo "$pacman_updates"
+    fi
+    if [[ -n "$aur_updates" ]]; then
+        echo -e "\n${GREEN}--- AUR Packages ---${RESET}"
+        echo "$aur_updates"
+    fi
+    if [[ -n "$flatpak_updates" ]]; then
+        echo -e "\n${GREEN}--- Flatpak Packages ---${RESET}"
+        echo "$flatpak_updates"
+    fi
+
+    # Determine commands based on AUTO_CONFIRM
+    local pacman_cmd="sudo pacman -Syu"
+    local paru_cmd="paru -Syu"
+    local flatpak_cmd="flatpak update"
+
+    if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+        pacman_cmd+=" --noconfirm"
+        paru_cmd+=" --noconfirm"
+        flatpak_cmd+=" -y"
+    elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+        echo -e "${YELLOW}Skipping all updates${RESET}"
+        return
+    else
+        # ask mode: get confirmation
+        read -rp $'\nProceed with updating all packages? [y/N]: ' ans < /dev/tty
+        if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}Skipping all updates.${RESET}"
+            return
+        fi
+        # If user confirmed, add noconfirm flags
+        pacman_cmd+=" --noconfirm"
+        paru_cmd+=" --noconfirm"
+        flatpak_cmd+=" -y"
+    fi
 
     echo -e "${YELLOW}Updating packages (sleep/idle inhibited)...${RESET}"
-    systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
-        echo 'Updating pacman packages...'
-        if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then sudo pacman -Syu --noconfirm; else sudo pacman -Syu; fi
 
-        echo 'Updating AUR packages...'
-        if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then paru -Syu --noconfirm; else paru -Syu; fi
+    # Run updates under systemd-inhibit
+    systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
+        echo -e '${GREEN}--- Updating Pacman Packages ---${RESET}'
+        $pacman_cmd
+
+        echo -e '${GREEN}--- Updating AUR Packages ---${RESET}'
+        $paru_cmd
 
         if command -v flatpak &>/dev/null; then
-            echo 'Updating Flatpak packages...'
-            if [[ \"$AUTO_CONFIRM\" == 'yes' ]]; then flatpak update -y; else flatpak update; fi
+            echo -e '${GREEN}--- Updating Flatpak Packages ---${RESET}'
+            $flatpak_cmd
         else
-            echo 'Flatpak not installed, skipping...'
+            echo -e '${YELLOW}Flatpak not installed, skipping...${RESET}'
         fi
 
-        echo -e '${GREEN}All packages updated.${RESET}'
+        echo -e '${GREEN}All updates completed.${RESET}'
     "
 }
+
 
 # --- Step 7: Run update directly ---
 if [[ "$action" == "update" ]]; then
