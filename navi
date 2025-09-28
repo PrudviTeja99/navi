@@ -148,42 +148,80 @@ pkg_action() {
     [[ -z "$pkgs" ]] && return
 
     local cmd=""
+    local confirm=""
+    local prefix=""
+
     if [[ "$op" == "install" ]]; then
         case "$source" in
-            pacman) cmd="sudo pacman -S $pkgs" ;;
-            paru)   cmd="paru -S $pkgs" ;;
-            flatpak) cmd="flatpak install -y $pkgs" ;;
+            pacman) 
+                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    confirm="--noconfirm"
+                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+                    prefix="echo n |"
+                fi
+
+                cmd="${prefix:+$prefix }sudo pacman -S${confirm:+ $confirm} $pkgs"
+                ;;
+            paru)
+                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    confirm="--noconfirm"
+                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+                    prefix="echo n |"
+                fi
+
+                cmd="${prefix:+$prefix }paru -S${confirm:+ $confirm} $pkgs"
+                ;;
+            flatpak)
+                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    confirm="-y"
+                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+                     prefix="echo n |"
+                fi
+
+                cmd="${prefix:+$prefix }flatpak install${confirm:+ $confirm} $pkgs"
+                ;;
         esac
     else  # remove
         case "$source" in
-            pacman) cmd="sudo pacman -Rns $pkgs" ;;
-            paru)   cmd="paru -Rns $pkgs" ;;
-            flatpak)
-                # Ask user if they want to remove user data
-                if [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    read -rp "Also delete Flatpak user data for $pkgs? [y/N]: " delete_data_ans < /dev/tty
-                    if [[ "$delete_data_ans" =~ ^[Yy]$ ]]; then
-                        cmd="flatpak uninstall --delete-data -y $pkgs"
-                    else
-                        cmd="flatpak uninstall -y $pkgs"
-                    fi
-                elif [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    cmd="flatpak uninstall --delete-data -y $pkgs"
-                else
-                    echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
-                    return
+            pacman) 
+                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    confirm="--noconfirm"
+                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+                    prefix="echo n |"
                 fi
+
+                cmd="${prefix:+$prefix }sudo pacman -Rns${confirm:+ $confirm} $pkgs"
+                ;;
+            paru)   
+                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    confirm="--noconfirm"
+                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+                    prefix="echo n |"
+                fi
+
+                cmd="${prefix:+$prefix }paru -Rns${confirm:+ $confirm} $pkgs"
+                ;;
+            flatpak)
+                
+                # Ask user if they want to remove user data
+                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                    confirm="--delete-data -y"
+                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+                    prefix="echo n |"
+                fi
+                cmd="${prefix:+$prefix }flatpak uninstall${confirm:+ $confirm} $pkgs"
                 ;;
         esac
     fi
 
 
-
+    set +e
     # Apply confirm / dry-run logic
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
         $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
         echo -e "${GREEN}Done: $pkgs${RESET}"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
+        $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
         echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
     else
         read -rp "$op $pkgs? [y/N]: " ans < /dev/tty
@@ -191,9 +229,11 @@ pkg_action() {
             $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
             echo -e "${GREEN}Done: $pkgs${RESET}"
         else
+            $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
             echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
         fi
     fi
+    set -e
 }
 
 
