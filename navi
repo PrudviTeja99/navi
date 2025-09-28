@@ -243,7 +243,7 @@ update_packages() {
     pacman_updates=$(checkupdates 2>/dev/null | awk '{print $1}')
     aur_updates=$(paru -Qua 2>/dev/null | sed 's/^ *//' | sed 's/ \+/ /g' | grep -vw "\[ignored\]$" | awk '{print $1}')
     flatpak_updates=""
-    $HAS_FLATPAK && flatpak_updates=$(flatpak update --appstream | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d')
+    $HAS_FLATPAK && flatpak_updates=$(flatpak update | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d')
     set -e
 
     # Combine for preview
