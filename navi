@@ -138,7 +138,6 @@ if [[ "$action" != "update" ]]; then
     source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
 fi
 
-
 # --- Helper for package operations (install/remove) ---
 pkg_action() {
     local op="$1"  # install/remove
@@ -147,103 +146,60 @@ pkg_action() {
     pkgs=$(echo "$pkgs" | xargs) # trim
     [[ -z "$pkgs" ]] && return
 
-    local cmd=""
-    local confirm=""
-    local prefix=""
+    local yes_cmd=""
+    local no_cmd=""
 
     if [[ "$op" == "install" ]]; then
         case "$source" in
-            pacman) 
-                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="--noconfirm"
-                    cmd="sudo pacman -S${confirm:+ $confirm} $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                    prefix="echo n |"
-                    cmd="${prefix:+$prefix }sudo pacman -S $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    cmd="sudo pacman -S --noconfirm $pkgs; echo n | sudo pacman -S $pkgs"
-                fi
+            pacman)
+                yes_cmd="sudo pacman -S --noconfirm $pkgs"
+                no_cmd="echo n | sudo pacman -S $pkgs"
                 ;;
             paru)
-                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="--noconfirm"
-                    cmd="paru -S${confirm:+ $confirm} $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                    prefix="echo n |"
-                    cmd="${prefix:+$prefix }paru -S $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    cmd="paru -S --noconfirm $pkgs; echo n | paru -S $pkgs"
-                fi
+                yes_cmd="paru -S --noconfirm $pkgs"
+                no_cmd="echo n | paru -S $pkgs"
                 ;;
             flatpak)
-                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="-y"
-                    cmd="flatpak install${confirm:+ $confirm} $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                    prefix="echo n |"
-                    cmd="${prefix:+$prefix }flatpak install $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    cmd="flatpak install -y $pkgs; echo n | flatpak install $pkgs"
-                fi
+                yes_cmd="flatpak install -y $pkgs"
+                no_cmd="echo n | flatpak install $pkgs"
                 ;;
 
         esac
     else  # remove
         case "$source" in
             pacman) 
-                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="--noconfirm"
-                    cmd="sudo pacman -Rns${confirm:+ $confirm} $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                    prefix="echo n |"
-                    cmd="${prefix:+$prefix }sudo pacman -Rns $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    cmd="sudo pacman -Rns --noconfirm $pkgs; echo n | sudo pacman -Rns $pkgs"
-                fi
+                yes_cmd="sudo pacman -Rns --noconfirm $pkgs"
+                no_cmd="echo n | sudo pacman -Rns $pkgs"
                 ;;
             paru)   
-                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="--noconfirm"
-                    cmd="paru -Rns${confirm:+ $confirm} $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                    prefix="echo n |"
-                    cmd="${prefix:+$prefix }paru -Rns $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    cmd="paru -Rns --noconfirm $pkgs; echo n | paru -Rns $pkgs"
-                fi
+                yes_cmd="paru -Rns --noconfirm $pkgs"
+                no_cmd="echo n | paru -Rns $pkgs"
                 ;;
             flatpak)
-                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="-y"
-                    cmd="flatpak uninstall --delete-data ${confirm:+ $confirm} $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                    prefix="echo n |"
-                    cmd="${prefix:+$prefix }flatpak uninstall --delete-data $pkgs"
-                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
-                    cmd="flatpak uninstall --delete-data -y $pkgs; echo n | flatpak uninstall --delete-data $pkgs"
-                fi
+                yes_cmd="flatpak uninstall --delete-data -y $pkgs"
+                no_cmd="echo n | flatpak uninstall $pkgs"
                 ;;
 
         esac
     fi
 
+    yes_cmd="systemd-inhibit --what=handle-lid-switch:sleep:idle --who='Package $op: $pkgs' --why='Updating packages' bash -c '$yes_cmd' 2>/dev/null"
+    no_cmd="systemd-inhibit --what=handle-lid-switch:sleep:idle --who='Package $op: $pkgs' --why='Updating packages' bash -c '$no_cmd' 2>/dev/null"
 
     set +e
     # Apply confirm / dry-run logic
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-        $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
+        $DRY_RUN && echo "[DRY-RUN] $yes_cmd" || eval "$yes_cmd"
         echo -e "${GREEN}Done: $pkgs${RESET}"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
+        $DRY_RUN && echo "[DRY-RUN] $no_cmd" || eval "$no_cmd"
         echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
     else
         read -rp "$op $pkgs? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            yes_cmd="${cmd%%;*}"   # take everything before first ;
             $DRY_RUN && echo "[DRY-RUN] $yes_cmd" || eval "$yes_cmd"
             echo -e "${GREEN}Done: $pkgs${RESET}"
         else
-            no_cmd="${cmd#*;}"     # take everything after first ;
             $DRY_RUN && echo "[DRY-RUN] $no_cmd" || eval "$no_cmd"
             echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
         fi
@@ -306,7 +262,6 @@ update_packages() {
         "
     fi
 }
-
 
 # --- Run update directly ---
 if [[ "$action" == "update" ]]; then
