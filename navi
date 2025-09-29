@@ -156,61 +156,74 @@ pkg_action() {
             pacman) 
                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
                     confirm="--noconfirm"
+                    cmd="sudo pacman -S${confirm:+ $confirm} $pkgs"
                 elif [[ "$AUTO_CONFIRM" == "no" ]]; then
                     prefix="echo n |"
+                    cmd="${prefix:+$prefix }sudo pacman -S $pkgs"
+                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    cmd="sudo pacman -S --noconfirm $pkgs; echo n | sudo pacman -S $pkgs"
                 fi
-
-                cmd="${prefix:+$prefix }sudo pacman -S${confirm:+ $confirm} $pkgs"
                 ;;
             paru)
                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
                     confirm="--noconfirm"
+                    cmd="paru -S${confirm:+ $confirm} $pkgs"
                 elif [[ "$AUTO_CONFIRM" == "no" ]]; then
                     prefix="echo n |"
+                    cmd="${prefix:+$prefix }paru -S $pkgs"
+                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    cmd="paru -S --noconfirm $pkgs; echo n | paru -S $pkgs"
                 fi
-
-                cmd="${prefix:+$prefix }paru -S${confirm:+ $confirm} $pkgs"
                 ;;
             flatpak)
                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
                     confirm="-y"
+                    cmd="flatpak install${confirm:+ $confirm} $pkgs"
                 elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-                     prefix="echo n |"
+                    prefix="echo n |"
+                    cmd="${prefix:+$prefix }flatpak install $pkgs"
+                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    cmd="flatpak install -y $pkgs; echo n | flatpak install $pkgs"
                 fi
-
-                cmd="${prefix:+$prefix }flatpak install${confirm:+ $confirm} $pkgs"
                 ;;
+
         esac
     else  # remove
         case "$source" in
             pacman) 
-                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
+                if [[ "$AUTO_CONFIRM" == "yes" ]]; then
                     confirm="--noconfirm"
+                    cmd="sudo pacman -Rns${confirm:+ $confirm} $pkgs"
                 elif [[ "$AUTO_CONFIRM" == "no" ]]; then
                     prefix="echo n |"
+                    cmd="${prefix:+$prefix }sudo pacman -Rns $pkgs"
+                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    cmd="sudo pacman -Rns --noconfirm $pkgs; echo n | sudo pacman -Rns $pkgs"
                 fi
-
-                cmd="${prefix:+$prefix }sudo pacman -Rns${confirm:+ $confirm} $pkgs"
                 ;;
             paru)   
                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
                     confirm="--noconfirm"
+                    cmd="paru -Rns${confirm:+ $confirm} $pkgs"
                 elif [[ "$AUTO_CONFIRM" == "no" ]]; then
                     prefix="echo n |"
+                    cmd="${prefix:+$prefix }paru -Rns $pkgs"
+                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    cmd="paru -Rns --noconfirm $pkgs; echo n | paru -Rns $pkgs"
                 fi
-
-                cmd="${prefix:+$prefix }paru -Rns${confirm:+ $confirm} $pkgs"
                 ;;
             flatpak)
-                
-                # Ask user if they want to remove user data
                 if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-                    confirm="--delete-data -y"
+                    confirm="-y"
+                    cmd="flatpak uninstall --delete-data ${confirm:+ $confirm} $pkgs"
                 elif [[ "$AUTO_CONFIRM" == "no" ]]; then
                     prefix="echo n |"
+                    cmd="${prefix:+$prefix }flatpak uninstall --delete-data $pkgs"
+                elif [[ "$AUTO_CONFIRM" == "ask" ]]; then
+                    cmd="flatpak uninstall --delete-data -y $pkgs; echo n | flatpak uninstall --delete-data $pkgs"
                 fi
-                cmd="${prefix:+$prefix }flatpak uninstall${confirm:+ $confirm} $pkgs"
                 ;;
+
         esac
     fi
 
@@ -226,10 +239,12 @@ pkg_action() {
     else
         read -rp "$op $pkgs? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
+            yes_cmd="${cmd%%;*}"   # take everything before first ;
+            $DRY_RUN && echo "[DRY-RUN] $yes_cmd" || eval "$yes_cmd"
             echo -e "${GREEN}Done: $pkgs${RESET}"
         else
-            $DRY_RUN && echo "[DRY-RUN] $cmd" || eval "$cmd"
+            no_cmd="${cmd#*;}"     # take everything after first ;
+            $DRY_RUN && echo "[DRY-RUN] $no_cmd" || eval "$no_cmd"
             echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
         fi
     fi
@@ -310,7 +325,7 @@ else
     case "$source" in
         pacman) pkg_list=$(pacman -Slq) ;;
         paru)   pkg_list=$(paru -Slq) ;;
-        flatpak) pkg_list=$(flatpak search "" | awk '{print $1}') ;;  # simple search for all
+        flatpak) pkg_list=$(flatpak search --columns=application "") ;;  # simple search for all
     esac
 fi
 
@@ -326,7 +341,7 @@ pkg=$(echo "$pkg_list" | fzf \
           elif [[ '$source' == 'paru' ]]; then
               paru -Si {};
           else
-            flatpak info {} 2>/dev/null || flatpak search {} --columns=application,description | head -n 1
+            flatpak info {} 2>/dev/null || flatpak remote-info flathub {}
           fi" \
     --bind "ctrl-p:toggle-preview"
 )
