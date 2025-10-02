@@ -138,6 +138,18 @@ if [[ "$action" != "update" ]]; then
     source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
 fi
 
+run_inhibited() {
+    local op="$1"
+    local pkgs="$2"
+    shift 2
+    systemd-inhibit \
+        --what=handle-lid-switch:sleep:idle \
+        --who="navi script" \
+        --why="Package $op: $pkgs" \
+        bash -c "$*"
+}
+
+
 # --- Helper for package operations (install/remove) ---
 pkg_action() {
     local op="$1"  # install/remove
@@ -183,30 +195,41 @@ pkg_action() {
         esac
     fi
 
-    yes_cmd="systemd-inhibit --what=handle-lid-switch:sleep:idle --who='Package $op: $pkgs' --why='Updating packages' bash -c '$yes_cmd' 2>/dev/null"
-    no_cmd="systemd-inhibit --what=handle-lid-switch:sleep:idle --who='Package $op: $pkgs' --why='Updating packages' bash -c '$no_cmd' 2>/dev/null"
-
     set +e
     # Apply confirm / dry-run logic
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
-        $DRY_RUN && echo "[DRY-RUN] $yes_cmd" || eval "$yes_cmd"
-        echo -e "${GREEN}Done: $pkgs${RESET}"
+        run_inhibited "$op" "$pkgs" "$yes_cmd"
+        echo -e "${GREEN}Done $op : $pkgs${RESET}"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        $DRY_RUN && echo "[DRY-RUN] $no_cmd" || eval "$no_cmd"
+        run_inhibited "$op" "$pkgs" "$no_cmd"
         echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
     else
         read -rp "$op $pkgs? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
-            $DRY_RUN && echo "[DRY-RUN] $yes_cmd" || eval "$yes_cmd"
-            echo -e "${GREEN}Done: $pkgs${RESET}"
+            run_inhibited "$op" "$pkgs" "$yes_cmd"
+            echo -e "${GREEN}Done $op : $pkgs${RESET}"
         else
-            $DRY_RUN && echo "[DRY-RUN] $no_cmd" || eval "$no_cmd"
+            run_inhibited "$op" "$pkgs" "$no_cmd"
             echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
         fi
     fi
     set -e
 }
 
+update_all() {
+    echo -e "${GREEN}--- Updating Pacman Packages ---${RESET}"
+    $pacman_cmd
+
+    echo -e "${GREEN}--- Updating AUR Packages ---${RESET}"
+    $paru_cmd
+
+    if $HAS_FLATPAK; then
+        echo -e "${GREEN}--- Updating Flatpak Packages ---${RESET}"
+        $flatpak_cmd
+    fi
+
+    echo -e "${GREEN}All updates completed.${RESET}"
+}
 
 # --- Update packages ---
 update_packages() {
@@ -241,26 +264,15 @@ update_packages() {
 
     echo -e "${YELLOW}Updating packages (sleep/idle inhibited)...${RESET}"
     pacman_cmd="sudo pacman -Syu --noconfirm"
-    paru_cmd="paru -Sya --noconfirm"
+    paru_cmd="paru -Sua --noconfirm"
     flatpak_cmd="flatpak update -y"
 
-    if $DRY_RUN; then
-        echo "[DRY-RUN] $pacman_cmd"
-        echo "[DRY-RUN] $paru_cmd"
-        $HAS_FLATPAK && echo "[DRY-RUN] $flatpak_cmd"
-    else
-        systemd-inhibit --what=handle-lid-switch:sleep:idle --who="navi script" --why="Updating packages" bash -c "
-            echo -e '${GREEN}--- Updating Pacman Packages ---${RESET}'
-            $pacman_cmd
-            echo -e '${GREEN}--- Updating AUR Packages ---${RESET}'
-            $paru_cmd
-            if $HAS_FLATPAK; then
-                echo -e '${GREEN}--- Updating Flatpak Packages ---${RESET}'
-                $flatpak_cmd
-            fi
-            echo -e '${GREEN}All updates completed.${RESET}'
-        "
-    fi
+    export pacman_cmd paru_cmd flatpak_cmd
+
+    export GREEN YELLOW RED RESET
+
+    run_inhibited "update" "all" "$(declare -f update_all); update_all"
+    
 }
 
 # --- Run update directly ---
