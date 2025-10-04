@@ -238,10 +238,39 @@ update_all() {
 # --- Update packages ---
 update_packages() {
     set +e
-    pacman_updates=$(checkupdates 2>/dev/null | awk '{print $1}')
-    aur_updates=$(paru -Qua 2>/dev/null | sed 's/^ *//' | sed 's/ \+/ /g' | grep -vw "\[ignored\]$" | awk '{print $1}')
+
+    # Initialize variables
+    pacman_updates=""
+    aur_updates=""
     flatpak_updates=""
-    $HAS_FLATPAK && flatpak_updates=$(flatpak update | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d')
+
+    # --- Run in parallel ---
+    checkupdates 2>/dev/null | awk '{print $1}' > /tmp/pacman_upd.txt &
+    PACMAN_PID=$!
+
+    if $HAS_PARU; then
+        paru -Qua 2>/dev/null | sed 's/^ *//' | sed 's/ \+/ /g' | grep -vw "\[ignored\]$" | awk '{print $1}' > /tmp/aur_upd.txt &
+        AUR_PID=$!
+    fi
+
+    if $HAS_FLATPAK; then
+        flatpak update | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d' > /tmp/flatpak_upd.txt &
+        FLATPAK_PID=$!
+    fi
+
+    # Wait for all
+    wait $PACMAN_PID
+    [[ $HAS_PARU == true ]] && wait $AUR_PID
+    [[ $HAS_FLATPAK == true ]] && wait $FLATPAK_PID
+
+    # Read results
+    pacman_updates=$(< /tmp/pacman_upd.txt)
+    [[ $HAS_PARU == true ]] && aur_updates=$(< /tmp/aur_upd.txt)
+    [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(< /tmp/flatpak_upd.txt)
+
+    # Clean temp files
+    rm -f /tmp/pacman_upd.txt /tmp/aur_upd.txt /tmp/flatpak_upd.txt 2>/dev/null
+
     set -e
 
     # Combine for preview
