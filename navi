@@ -6,9 +6,10 @@
 set -euo pipefail
 
 # Load helper functions
+DEP_SCRIPT_DIR="/usr/local/share/navi"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/navi-ensure-source-installed.sh"
-source "$SCRIPT_DIR/navi-colors.sh"
+source "$DEP_SCRIPT_DIR/navi-ensure-source-installed.sh"
+source "$DEP_SCRIPT_DIR/navi-colors.sh"
 
 # --- Show help ---
 show_help() {
@@ -92,15 +93,25 @@ case "$action_input" in
     u) action="update" ;;
     install|remove|update) action="$action_input" ;;
     "") 
-        action_display=$(printf "Install\nRemove\nSystem Update" | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
+        # Map display -> internal action
+        mapfile -t ACTIONS < <(printf "Install:install\nRemove:remove\nSystem Update:update")
+        
+        # Show fzf menu
+        action_display=$(printf "%s\n" "${ACTIONS[@]}" | cut -d':' -f1 | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
+        
+        # If nothing selected, default to Install
         [[ -z "$action_display" ]] && action_display="Install"
-        action=$(echo "$action_display" | tr '[:upper:]' '[:lower:]')
+        
+        # Map back to internal action
+        action=$(printf "%s\n" "${ACTIONS[@]}" | grep "^$action_display:" | cut -d':' -f2)
         ;;
     *)
         echo "Unknown action: $action_input"
         exit 1
         ;;
 esac
+
+# Optional: make first letter uppercase for display
 action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
 
 
