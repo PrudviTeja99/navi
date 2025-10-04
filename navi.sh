@@ -7,13 +7,8 @@ set -euo pipefail
 
 # Load helper functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/navi-ensure-source-installed"
-
-# --- Colors (defined once globally) ---
-GREEN="\e[32m"
-YELLOW="\e[33m"
-RED="\e[31m"
-RESET="\e[0m"
+source "$SCRIPT_DIR/navi-ensure-source-installed.sh"
+source "$SCRIPT_DIR/navi-colors.sh"
 
 # --- Show help ---
 show_help() {
@@ -73,7 +68,9 @@ for cmd in fzf paru pacman; do
     fi
 done
 HAS_FLATPAK=false
+HAS_PARU=false
 command -v flatpak &>/dev/null && HAS_FLATPAK=true
+command -v paru &>/dev/null && HAS_PARU=true
 
 # --- Parse options ---
 AUTO_CONFIRM="ask" # default interactive
@@ -113,24 +110,11 @@ if [[ "$action" != "update" ]]; then
     case "$source_input" in
         p) source="pacman" ;;
         a) source="paru" ;;
-        f) 
-            if $HAS_FLATPAK; then
-                source="flatpak"
-            else
-                echo "Flatpak not installed."
-                exit 1
-            fi
-            ;;
-        pacman|paru|flatpak) 
-            if [[ "$source_input" == "flatpak" && "$HAS_FLATPAK" == false ]]; then
-                echo "Flatpak not installed."
-                exit 1
-            fi
-            source="$source_input"
-            ;;
+        f) source="flatpak" ;;
+        pacman|paru|flatpak) source="$source_input" ;;
         "")
             # Interactive menu
-            source_display=$(printf "Pacman\nParu\nFlatpak" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
+            source_display=$(printf "Pacman\nParu (AUR Helper)\nFlatpak" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
             [[ -z "$source_display" ]] && source_display="Pacman"
             source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
             ;;
@@ -204,36 +188,40 @@ pkg_action() {
     # Apply confirm / dry-run logic
     if [[ "$AUTO_CONFIRM" == "yes" ]]; then
         run_inhibited "$op" "$pkgs" "$yes_cmd"
-        echo -e "${GREEN}Done $op : $pkgs${RESET}"
+        greenLog "Done $op : $pkgs"
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
         run_inhibited "$op" "$pkgs" "$no_cmd"
-        echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
+        yellowLog "Skipping $op: $pkgs"
     else
         read -rp "$op $pkgs? [y/N]: " ans < /dev/tty
         if [[ "$ans" =~ ^[Yy]$ ]]; then
             run_inhibited "$op" "$pkgs" "$yes_cmd"
-            echo -e "${GREEN}Done $op : $pkgs${RESET}"
+            greenLog "Done $op : $pkgs"
         else
             run_inhibited "$op" "$pkgs" "$no_cmd"
-            echo -e "${YELLOW}Skipping $op: $pkgs${RESET}"
+            yellowLog "Skipping $op: $pkgs"
         fi
     fi
     set -e
 }
 
 update_all() {
-    echo -e "${GREEN}--- Updating Pacman Packages ---${RESET}"
+
+    greenLog "--- Updating Pacman Packages ---"
     $pacman_cmd
 
-    echo -e "${GREEN}--- Updating AUR Packages ---${RESET}"
-    $paru_cmd
+    if $HAS_PARU; then
+        greenLog "--- Updating AUR Packages ---"
+        $paru_cmd
+    fi
 
     if $HAS_FLATPAK; then
-        echo -e "${GREEN}--- Updating Flatpak Packages ---${RESET}"
+        greenLog "--- Updating Flatpak Packages ---"
         $flatpak_cmd
     fi
 
-    echo -e "${GREEN}All updates completed.${RESET}"
+    greenLog "All updates completed"
+
 }
 
 # --- Update packages ---
@@ -252,7 +240,7 @@ update_packages() {
     [[ -n "$flatpak_updates" ]] && updates_preview+="\n${GREEN}--- Flatpak Updates ---${RESET}\n$flatpak_updates"
 
     if [[ -z "$updates_preview" ]]; then
-        echo -e "${GREEN}All packages are up-to-date.${RESET}"
+        greenLog "All packages are up-to-date"
         return
     fi
 
@@ -264,10 +252,10 @@ update_packages() {
         read -rp $'\nProceed with updating all packages? [y/N]: ' ans < /dev/tty
         [[ ! "$ans" =~ ^[Yy]$ ]] && { echo -e "${YELLOW}Skipping all updates.${RESET}"; return; }
     elif [[ "$AUTO_CONFIRM" == "no" ]]; then
-        echo -e "${YELLOW}Skipping all updates.${RESET}"; return;
+        yellowLog "Skipping all updates"; return;
     fi
 
-    echo -e "${YELLOW}Updating packages (sleep/idle inhibited)...${RESET}"
+    yellowLog "Updating packages (sleep/idle inhibited)..."
     pacman_cmd="sudo pacman -Syu --noconfirm"
     paru_cmd="paru -Sua --noconfirm"
     flatpak_cmd="flatpak update -y"

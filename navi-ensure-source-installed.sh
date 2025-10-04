@@ -1,11 +1,8 @@
 #!/bin/bash
 # navi-ensure-source-installed - extra helper functions for Navi script
 
-# --- Colors (reuse if needed) ---
-GREEN="\e[32m"
-YELLOW="\e[33m"
-RED="\e[31m"
-RESET="\e[0m"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/navi-colors.sh"
 
 # --- Ensure optional sources are installed ---
 ensure_source_installed() {
@@ -17,6 +14,7 @@ ensure_source_installed() {
                 echo -e "${YELLOW}Paru not found. Installing via pacman...${RESET}"
                 sudo pacman -S --noconfirm paru
                 echo -e "${GREEN}Paru installed successfully.${RESET}"
+                HAS_PARU=true
             fi
             ;;
         flatpak)
