@@ -5,6 +5,10 @@
 
 set -euo pipefail
 
+# Load helper functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/navi-ensure-source-installed"
+
 # --- Colors (defined once globally) ---
 GREEN="\e[32m"
 YELLOW="\e[33m"
@@ -91,7 +95,7 @@ case "$action_input" in
     u) action="update" ;;
     install|remove|update) action="$action_input" ;;
     "") 
-        action_display=$(printf "Install\nRemove\nUpdate" | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
+        action_display=$(printf "Install\nRemove\nSystem Update" | fzf --height=40% --reverse --border --prompt="Select action: " --ansi)
         [[ -z "$action_display" ]] && action_display="Install"
         action=$(echo "$action_display" | tr '[:upper:]' '[:lower:]')
         ;;
@@ -135,6 +139,7 @@ if [[ "$action" != "update" ]]; then
             exit 1
             ;;
     esac
+    ensure_source_installed "$source"
     source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
 fi
 

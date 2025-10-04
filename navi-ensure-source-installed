@@ -1,0 +1,32 @@
+#!/bin/bash
+# navi-ensure-source-installed - extra helper functions for Navi script
+
+# --- Colors (reuse if needed) ---
+GREEN="\e[32m"
+YELLOW="\e[33m"
+RED="\e[31m"
+RESET="\e[0m"
+
+# --- Ensure optional sources are installed ---
+ensure_source_installed() {
+    local src="$1"
+
+    case "$src" in
+        paru)
+            if ! command -v paru &>/dev/null; then
+                echo -e "${YELLOW}Paru not found. Installing via pacman...${RESET}"
+                sudo pacman -S --noconfirm paru
+                echo -e "${GREEN}Paru installed successfully.${RESET}"
+            fi
+            ;;
+        flatpak)
+            if ! command -v flatpak &>/dev/null; then
+                echo -e "${YELLOW}Flatpak not found. Installing via pacman...${RESET}"
+                sudo pacman -S --noconfirm flatpak
+                echo -e "${GREEN}Flatpak installed successfully.${RESET}"
+                HAS_FLATPAK=true
+            fi
+            ;;
+    esac
+}
+
