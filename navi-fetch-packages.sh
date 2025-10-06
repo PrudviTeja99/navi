@@ -6,24 +6,24 @@ fetch_all_packages(){
 
 #Fetch installed packges
 fetch_installed_packages(){
-    pacman -Qq > /tmp/navi_pacman_installed &
+    pacman -Qq > "$PACMAN_INSTALLED_TMP" &
     PACMAN_INSTALLED_PID=$!
 
-    paru -Qq > /tmp/navi_aur_installed &
+    paru -Qq > "$AUR_INSTALLED_TMP" &
     AUR_INSTALLED_PID=$!
-    flatpak list --app --columns=application > /tmp/navi_flatpak_installed &
+    flatpak list --app --columns=application > "$FLATPAK_INSTALLED_TMP" &
     FLATPAK_INSTALLED_PID=$!
 }
 
 
 #Fetch from remote
 fetch_remote_packages(){
-    pacman -Slq > /tmp/navi_pacman_remote &
+    pacman -Slq > "$PACMAN_REMOTE_TMP" &
     PACMAN_REMOTE_PID=$!
 
-    paru -Slq > /tmp/navi_aur_remote &
+    paru -Slq > "$AUR_REMOTE_TMP" &
     AUR_REMOTE_PID=$!
 
-    flatpak search --columns=application "" > /tmp/navi_flatpak_remote &
+    flatpak search --columns=application "" > "$FLATPAK_REMOTE_TMP" &
     FLATPAK_REMOTE_PID=$!
 }

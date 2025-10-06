@@ -30,7 +30,7 @@ greenLog "Installing $SCRIPT_NAME to $MAIN_TARGET..."
 $SUDO install -m 755 "$MAIN_SOURCE" "$MAIN_TARGET"
 # Make sure helper files are in a known place (next to main script is fine)
 $SUDO mkdir -p "$DEP_TARGET_DIR"
-$SUDO cp "$SCRIPT_DIR/navi-colors.sh" "$SCRIPT_DIR/navi-ensure-source-installed.sh" "$SCRIPT_DIR/navi-fetch-packages.sh" "$DEP_TARGET_DIR"
+$SUDO cp "$SCRIPT_DIR/navi-colors.sh" "$SCRIPT_DIR/navi-ensure-source-installed.sh" "$SCRIPT_DIR/navi-fetch-packages.sh" "$SCRIPT_DIR/navi-cleanup.sh" "$DEP_TARGET_DIR"
 
 greenLog "Installed successfully!"
 greenLog "Run '$SCRIPT_NAME' to start."

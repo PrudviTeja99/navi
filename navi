@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DEP_SCRIPT_DIR/navi-ensure-source-installed.sh"
 source "$DEP_SCRIPT_DIR/navi-colors.sh"
 source "$DEP_SCRIPT_DIR/navi-fetch-packages.sh"
+source "$DEP_SCRIPT_DIR/navi-cleanup.sh"
 
 # --- Show help ---
 show_help() {
@@ -80,9 +81,28 @@ command -v paru &>/dev/null && HAS_PARU=true
 PACMAN_INSTALLED_PID=""
 AUR_INSTALLED_PID=""
 FLATPAK_INSTALLED_PID=""
+
 PACMAN_REMOTE_PID=""
 AUR_REMOTE_PID=""
 FLATPAK_REMOTE_PID=""
+
+PACMAN_UPDATE_PID=""
+AUR_UPDATE_PID=""
+FLATPAK_UPDATE_PID=""
+
+PACMAN_INSTALLED_TMP="/tmp/navi_pacman_installed"
+AUR_INSTALLED_TMP="/tmp/navi_aur_installed"
+FLATPAK_INSTALLED_TMP="/tmp/navi_flatpak_installed"
+
+PACMAN_REMOTE_TMP="/tmp/navi_pacman_remote"
+AUR_REMOTE_TMP="/tmp/navi_aur_remote"
+FLATPAK_REMOTE_TMP="/tmp/navi_flatpak_remote"
+
+PACMAN_UPDATE_TMP="/tmp/navi_pacman_update"
+AUR_UPDATE_TMP="/tmp/navi_aur_update"
+FLATPAK_UPDATE_TMP="/tmp/navi_flatpak_update"
+
+
 
 # --- Parse options ---
 AUTO_CONFIRM="ask" # default interactive
@@ -229,6 +249,10 @@ pkg_action() {
             yellowLog "Skipping $op: $pkgs"
         fi
     fi
+
+    run_post_cleanup "$PACMAN_INSTALLED_TMP" "$AUR_INSTALLED_TMP" "$FLATPAK_INSTALLED_TMP" \
+    "$PACMAN_REMOTE_TMP" "$AUR_REMOTE_TMP" "$FLATPAK_REMOTE_TMP"
+
     set -e
 }
 
@@ -261,31 +285,31 @@ update_packages() {
     flatpak_updates=""
 
     # --- Run in parallel ---
-    checkupdates 2>/dev/null | awk '{print $1}' > /tmp/pacman_upd.txt &
-    PACMAN_PID=$!
+    checkupdates 2>/dev/null | awk '{print $1}' > "$PACMAN_UPDATE_TMP" &
+    PACMAN_UPDATE_PID=$!
 
     if $HAS_PARU; then
-        paru -Qua 2>/dev/null | sed 's/^ *//' | sed 's/ \+/ /g' | grep -vw "\[ignored\]$" | awk '{print $1}' > /tmp/aur_upd.txt &
-        AUR_PID=$!
+        paru -Qua 2>/dev/null | sed 's/^ *//' | sed 's/ \+/ /g' | grep -vw "\[ignored\]$" | awk '{print $1}' > "$AUR_UPDATE_TMP" &
+        AUR_UPDATE_PID=$!
     fi
 
     if $HAS_FLATPAK; then
-        flatpak update | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d' > /tmp/flatpak_upd.txt &
-        FLATPAK_PID=$!
+        flatpak update | sed -n '/^ 1./,$p' | awk '{print $2}' | grep -v '^$' | sed '$d' > "$FLATPAK_UPDATE_TMP" &
+        FLATPAK_UPDATE_PID=$!
     fi
 
     # Wait for all
-    wait $PACMAN_PID
-    [[ $HAS_PARU == true ]] && wait $AUR_PID
-    [[ $HAS_FLATPAK == true ]] && wait $FLATPAK_PID
+    wait $PACMAN_UPDATE_PID
+    [[ $HAS_PARU == true ]] && wait $AUR_UPDATE_PID
+    [[ $HAS_FLATPAK == true ]] && wait $FLATPAK_UPDATE_PID
 
     # Read results
-    pacman_updates=$(< /tmp/pacman_upd.txt)
-    [[ $HAS_PARU == true ]] && aur_updates=$(< /tmp/aur_upd.txt)
-    [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(< /tmp/flatpak_upd.txt)
+    pacman_updates=$(< "$PACMAN_UPDATE_TMP")
+    [[ $HAS_PARU == true ]] && aur_updates=$(< "$AUR_UPDATE_TMP")
+    [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(< "$FLATPAK_UPDATE_TMP")
 
     # Clean temp files
-    rm -f /tmp/pacman_upd.txt /tmp/aur_upd.txt /tmp/flatpak_upd.txt 2>/dev/null
+    run_post_cleanup "$PACMAN_UPDATE_TMP" "$AUR_UPDATE_TMP" "$FLATPAK_UPDATE_TMP"
 
     set -e
 
