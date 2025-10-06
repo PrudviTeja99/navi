@@ -334,25 +334,25 @@ fi
 if [[ "$action" == "remove" ]]; then
     case "$source" in
         pacman) 
-            wait PACMAN_INSTALLED_PID
+            wait $PACMAN_INSTALLED_PID
             pkg_list=$(< /tmp/navi_pacman_installed) ;;
         paru)   
-            wait AUR_INSTALLED_PID
+            wait $AUR_INSTALLED_PID
             pkg_list=$(< /tmp/navi_aur_installed) ;;
         flatpak) 
-            wait FLATPAK_INSTALLED_PID
+            wait $FLATPAK_INSTALLED_PID
             pkg_list=$(< /tmp/navi_flatpak_installed) ;;
     esac
 else
     case "$source" in
         pacman) 
-            wait PACMAN_REMOTE_PID
+            wait $PACMAN_REMOTE_PID
             pkg_list=$(< /tmp/navi_pacman_remote) ;;
         paru)
-            wait AUR_REMOTE_PID
+            wait $AUR_REMOTE_PID
             pkg_list=$(< /tmp/navi_aur_remote) ;;
         flatpak)
-            wait FLATPAK_REMOTE_PID
+            wait $FLATPAK_REMOTE_PID
             pkg_list=$(< /tmp/navi_flatpak_remote) ;;  # simple search for all
     esac
 fi
