@@ -10,6 +10,7 @@ DEP_SCRIPT_DIR="/usr/local/share/navi"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DEP_SCRIPT_DIR/navi-ensure-source-installed.sh"
 source "$DEP_SCRIPT_DIR/navi-colors.sh"
+source "$DEP_SCRIPT_DIR/navi-fetch-packages.sh"
 
 # --- Show help ---
 show_help() {
@@ -62,16 +63,26 @@ SUDO_LOOP_PID=$!
 trap "kill $SUDO_LOOP_PID" EXIT INT TERM
 
 # --- Check dependencies ---
-for cmd in fzf paru pacman; do
+for cmd in fzf pacman; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "Error: $cmd is required but not installed."
         exit 1
     fi
 done
+
+HAS_PACMAN=false
 HAS_FLATPAK=false
 HAS_PARU=false
+command -v pacman &>/dev/null && HAS_PACMAN=true
 command -v flatpak &>/dev/null && HAS_FLATPAK=true
 command -v paru &>/dev/null && HAS_PARU=true
+
+PACMAN_INSTALLED_PID=""
+AUR_INSTALLED_PID=""
+FLATPAK_INSTALLED_PID=""
+PACMAN_REMOTE_PID=""
+AUR_REMOTE_PID=""
+FLATPAK_REMOTE_PID=""
 
 # --- Parse options ---
 AUTO_CONFIRM="ask" # default interactive
@@ -117,6 +128,10 @@ action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
 
 # --- Determine source (skip for update) ---
 if [[ "$action" != "update" ]]; then
+
+    #Initial packages fetch from remote and query from local
+    fetch_all_packages
+
     source_input="${2:-}"
     case "$source_input" in
         p) source="pacman" ;;
@@ -134,6 +149,7 @@ if [[ "$action" != "update" ]]; then
             exit 1
             ;;
     esac
+
     ensure_source_installed "$source"
     source_display="$(tr '[:lower:]' '[:upper:]' <<< ${source:0:1})${source:1}"
 fi
@@ -317,15 +333,27 @@ fi
 # --- Build package list ---
 if [[ "$action" == "remove" ]]; then
     case "$source" in
-        pacman) pkg_list=$(pacman -Qq) ;;
-        paru)   pkg_list=$(paru -Qq) ;;
-        flatpak) pkg_list=$(flatpak list --app --columns=application) ;;
+        pacman) 
+            wait PACMAN_INSTALLED_PID
+            pkg_list=$(< /tmp/navi_pacman_installed) ;;
+        paru)   
+            wait AUR_INSTALLED_PID
+            pkg_list=$(< /tmp/navi_aur_installed) ;;
+        flatpak) 
+            wait FLATPAK_INSTALLED_PID
+            pkg_list=$(< /tmp/navi_flatpak_installed) ;;
     esac
 else
     case "$source" in
-        pacman) pkg_list=$(pacman -Slq) ;;
-        paru)   pkg_list=$(paru -Slq) ;;
-        flatpak) pkg_list=$(flatpak search --columns=application "") ;;  # simple search for all
+        pacman) 
+            wait PACMAN_REMOTE_PID
+            pkg_list=$(< /tmp/navi_pacman_remote) ;;
+        paru)
+            wait AUR_REMOTE_PID
+            pkg_list=$(< /tmp/navi_aur_remote) ;;
+        flatpak)
+            wait FLATPAK_REMOTE_PID
+            pkg_list=$(< /tmp/navi_flatpak_remote) ;;  # simple search for all
     esac
 fi
 
