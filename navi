@@ -159,10 +159,13 @@ if [[ "$action" != "update" ]]; then
         f) source="flatpak" ;;
         pacman|paru|flatpak) source="$source_input" ;;
         "")
+            mapfile -t SOURCES < <(printf "Pacman (System):pacman\nParu (AUR Helper):paru\nFlatpak:flatpak")
             # Interactive menu
-            source_display=$(printf "Pacman\nParu (AUR Helper)\nFlatpak" | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
+            source_display=$(printf "%s\n" "${SOURCES[@]}" | cut -d':' -f1 | fzf --height=20% --reverse --border --prompt="Select source: " --ansi)
+
             [[ -z "$source_display" ]] && source_display="Pacman"
-            source=$(echo "$source_display" | tr '[:upper:]' '[:lower:]')
+            
+            source=$(printf "%s\n" "${SOURCES[@]}" | grep "^$source_display:" | cut -d':' -f2)
             ;;
         *)
             echo "Unknown source: $source_input"
