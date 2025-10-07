@@ -1,3 +1,3 @@
-run_post_cleanup(){
+run_cleanup(){
     rm -f "$@" 2>/dev/null &
 }

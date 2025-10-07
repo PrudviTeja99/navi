@@ -102,7 +102,13 @@ PACMAN_UPDATE_TMP="/tmp/navi_pacman_update"
 AUR_UPDATE_TMP="/tmp/navi_aur_update"
 FLATPAK_UPDATE_TMP="/tmp/navi_flatpak_update"
 
+PACMAN_QUERY_CMD="pacman -Qq"
+AUR_QUERY_CMD="paru -Qq"
+FLATPAK_QUERY_CMD="flatpak list --app --columns=application"
 
+PACMAN_REMOTE_CMD="pacman -Slq"
+AUR_REMOTE_CMD="paru -Slq"
+FLATPAK_REMOTE_CMD="flatpak remote-ls flathub --columns=application"
 
 # --- Parse options ---
 AUTO_CONFIRM="ask" # default interactive
@@ -150,7 +156,7 @@ action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
 if [[ "$action" != "update" ]]; then
 
     #Initial packages fetch from remote and query from local
-    fetch_all_packages
+    # fetch_all_packages
 
     source_input="${2:-}"
     case "$source_input" in
@@ -253,8 +259,8 @@ pkg_action() {
         fi
     fi
 
-    run_post_cleanup "$PACMAN_INSTALLED_TMP" "$AUR_INSTALLED_TMP" "$FLATPAK_INSTALLED_TMP" \
-    "$PACMAN_REMOTE_TMP" "$AUR_REMOTE_TMP" "$FLATPAK_REMOTE_TMP"
+    # run_cleanup "$PACMAN_INSTALLED_TMP" "$AUR_INSTALLED_TMP" "$FLATPAK_INSTALLED_TMP" \
+    # "$PACMAN_REMOTE_TMP" "$AUR_REMOTE_TMP" "$FLATPAK_REMOTE_TMP"
 
     set -e
 }
@@ -312,7 +318,7 @@ update_packages() {
     [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(< "$FLATPAK_UPDATE_TMP")
 
     # Clean temp files
-    run_post_cleanup "$PACMAN_UPDATE_TMP" "$AUR_UPDATE_TMP" "$FLATPAK_UPDATE_TMP"
+    # run_cleanup "$PACMAN_UPDATE_TMP" "$AUR_UPDATE_TMP" "$FLATPAK_UPDATE_TMP"
 
     set -e
 
@@ -348,6 +354,8 @@ update_packages() {
     export GREEN YELLOW RED RESET
 
     run_inhibited "update" "all" "$(declare -f update_all); update_all"
+
+    fetch_all_packages
     
 }
 
@@ -360,27 +368,51 @@ fi
 # --- Build package list ---
 if [[ "$action" == "remove" ]]; then
     case "$source" in
-        pacman) 
-            wait $PACMAN_INSTALLED_PID
-            pkg_list=$(< /tmp/navi_pacman_installed) ;;
+        pacman)
+            if [[ ! -f "$PACMAN_INSTALLED_TMP" ]]; then
+                fetch_pacman_installed_packages
+                wait $PACMAN_INSTALLED_PID
+            fi
+             pkg_list=$(< "$PACMAN_INSTALLED_TMP")
+            ;;
         paru)   
-            wait $AUR_INSTALLED_PID
-            pkg_list=$(< /tmp/navi_aur_installed) ;;
+            if [[ ! -f "$AUR_INSTALLED_TMP" ]]; then
+                fetch_aur_installed_packages
+                wait $AUR_INSTALLED_PID
+            fi
+            pkg_list=$(< "$AUR_INSTALLED_TMP")
+            ;;
         flatpak) 
-            wait $FLATPAK_INSTALLED_PID
-            pkg_list=$(< /tmp/navi_flatpak_installed) ;;
+            if [[ ! -f "$FLATPAK_INSTALLED_TMP" ]]; then
+                fetch_flatpak_installed_packages
+                wait $FLATPAK_INSTALLED_PID
+            fi
+            pkg_list=$(< "$FLATPAK_INSTALLED_TMP")
+            ;;
     esac
 else
     case "$source" in
         pacman) 
-            wait $PACMAN_REMOTE_PID
-            pkg_list=$(< /tmp/navi_pacman_remote) ;;
+            if [[ ! -f "$PACMAN_REMOTE_TMP" ]]; then
+                fetch_pacman_remote_packages
+                wait $PACMAN_REMOTE_PID
+            fi
+            pkg_list=$(< "$PACMAN_REMOTE_TMP")
+            ;;
         paru)
-            wait $AUR_REMOTE_PID
-            pkg_list=$(< /tmp/navi_aur_remote) ;;
+            if [[ ! -f "$AUR_REMOTE_TMP" ]]; then
+                fetch_aur_remote_packages
+                wait $AUR_REMOTE_PID
+            fi
+            pkg_list=$(< "$AUR_REMOTE_TMP")
+            ;;
         flatpak)
-            wait $FLATPAK_REMOTE_PID
-            pkg_list=$(< /tmp/navi_flatpak_remote) ;;  # simple search for all
+            if [[ ! -f "$FLATPAK_REMOTE_TMP" ]]; then
+                fetch_flatpak_remote_packages
+                wait $FLATPAK_REMOTE_PID
+            fi
+            pkg_list=$(< "$FLATPAK_REMOTE_TMP")
+            ;;
     esac
 fi
 
