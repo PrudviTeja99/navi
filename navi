@@ -103,11 +103,11 @@ AUR_UPDATE_TMP="/tmp/navi_aur_update"
 FLATPAK_UPDATE_TMP="/tmp/navi_flatpak_update"
 
 PACMAN_QUERY_CMD="pacman -Qq"
-AUR_QUERY_CMD="paru -Qq"
+AUR_QUERY_CMD="paru -Qmq"
 FLATPAK_QUERY_CMD="flatpak list --app --columns=application"
 
 PACMAN_REMOTE_CMD="pacman -Slq"
-AUR_REMOTE_CMD="paru -Slq"
+AUR_REMOTE_CMD="paru -Slq --aur"
 FLATPAK_REMOTE_CMD="flatpak remote-ls flathub --columns=application"
 
 # --- Parse options ---
@@ -127,6 +127,7 @@ action_input="${1:-}"
 case "$action_input" in
     i) action="install" ;;
     r) action="remove" ;;
+    f) action="refresh" ;; 
     u) action="update" ;;
     install|remove|update) action="$action_input" ;;
     "") 
@@ -153,7 +154,7 @@ action_display="$(tr '[:lower:]' '[:upper:]' <<< ${action:0:1})${action:1}"
 
 
 # --- Determine source (skip for update) ---
-if [[ "$action" != "update" ]]; then
+if [[ "$action" != "update" && "$action" != "refresh" ]]; then
 
     #Initial packages fetch from remote and query from local
     # fetch_all_packages
@@ -358,6 +359,11 @@ update_packages() {
     fetch_all_packages
     
 }
+
+if [[ "$action" == "refresh" ]]; then
+    fetch_all_packages
+    exit 0
+fi
 
 # --- Run update directly ---
 if [[ "$action" == "update" ]]; then
