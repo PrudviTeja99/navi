@@ -354,7 +354,7 @@ update_packages() {
 
     export GREEN YELLOW RED RESET
 
-    run_inhibited "update" "all" "$(declare -f update_all); update_all"
+    run_inhibited "update" "all" "source '$DEP_SCRIPT_DIR/navi-colors.sh'; $(declare -f update_all); update_all"
 
     fetch_all_packages
     

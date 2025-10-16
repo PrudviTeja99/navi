@@ -1,5 +1,5 @@
 #!/bin/bash
-# navi-common.sh - shared colors and message helpers for Navi scripts
+# navi-colors.sh - shared colors and message helpers for Navi scripts
 
 # --- Colors ---
 GREEN="\e[32m"
