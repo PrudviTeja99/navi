@@ -11,17 +11,45 @@ ensure_source_installed() {
     case "$src" in
         paru)
             if ! command -v paru &>/dev/null; then
-                echo -e "${YELLOW}Paru not found. Installing via pacman...${RESET}"
-                sudo pacman -S --noconfirm paru
-                echo -e "${GREEN}Paru installed successfully.${RESET}"
+                yellowLog "Paru not found. Checking if available in pacman..."
+
+                # Check if paru is available in official repos
+                if pacman -Si paru &>/dev/null; then
+                    yellowLog "Installing paru via pacman..."
+                    sudo pacman -S --noconfirm paru
+                else
+                    yellowLog "Paru not found in pacman repos. Installing from AUR..."
+
+                    # Ensure git and base-devel are installed
+                    if ! command -v git &>/dev/null; then
+                        yellowLog "Git not found. Installing via pacman..."
+                        sudo pacman -S --needed --noconfirm git
+                    fi
+
+                    if ! pacman -Qi base-devel &>/dev/null; then
+                        yellowLog "Base-devel not found. Installing via pacman..."
+                        sudo pacman -S --needed --noconfirm base-devel
+                    fi
+
+                    # Clone and build paru from AUR
+                    tmpdir=$(mktemp -d)
+                    git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"
+                    cd "$tmpdir/paru" || exit 1
+                    makepkg -si --noconfirm
+
+                    cd - >/dev/null || true
+                    rm -rf "$tmpdir"
+                fi
+
+                greenLog "Paru installed successfully."
                 HAS_PARU=true
             fi
             ;;
         flatpak)
             if ! command -v flatpak &>/dev/null; then
-                echo -e "${YELLOW}Flatpak not found. Installing via pacman...${RESET}"
+                yellowLog "Flatpak not found. Installing via pacman..."
                 sudo pacman -S --noconfirm flatpak
-                echo -e "${GREEN}Flatpak installed successfully.${RESET}"
+                greenLog "Flatpak installed successfully."
                 HAS_FLATPAK=true
             fi
             ;;
