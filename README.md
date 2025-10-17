@@ -1,124 +1,167 @@
-# Navi – Interactive Package Manager for Arch/CachyOS
+# 🧭 Navi – Interactive Package Manager for Arch/CachyOS
 
-**Navi** is a lightweight, interactive TUI wrapper for Pacman, Paru (AUR), and Flatpak.  
-It combines fuzzy search, clean menus, and automatic sleep inhibition during updates into a single tool.  
+**Navi** is a lightweight, interactive **TUI wrapper** for **Pacman**, **Paru (AUR)**, and **Flatpak**.  
+It simplifies installing, removing, and updating packages from all major sources with a single interface — complete with fuzzy search, package previews, and automatic sleep prevention during updates.
 
-Think of it as **Omarchy-like**, but for Arch/CachyOS with extra polish. 🚀
+Think of it as **Omarchy-like**, but for **Arch/CachyOS**, with extra polish. 🚀
 
 ---
 
 ## ✨ Features
 
-- 🔍 **Fuzzy search** for finding and installing packages (with `fzf`)
-- 📦 Works with **Pacman (official repos)**, **Paru (AUR)**, and **Flatpak**
-- 📖 **Live descriptions** of packages in preview window
-- 💤 **Prevents sleep/idle** during system updates (via `systemd-inhibit`)
-- 🔑 **Single sudo prompt** at startup (no repeated passwords)
-- ✅ Flexible confirmation modes:
-  - Interactive (default)
+- 🔍 **Fuzzy Search** — Quickly find packages using [`fzf`](https://github.com/junegunn/fzf)  
+- 📦 **Unified Interface** — Manage packages from:
+  - **Pacman** (official repositories)
+  - **Paru** (AUR)
+  - **Flatpak**
+- 🖥️ **Interactive TUI Menus** — Clean layout with `fzf`-powered selection
+- 📖 **Live Package Descriptions** in the preview window
+- 💤 **Prevents Sleep/Idle** during updates (`systemd-inhibit`)
+- 🔑 **Single sudo prompt** — Requests once, keeps alive for session
+- ✅ **Confirmation Modes**
+  - Default (interactive)
   - Always Yes (`-y`)
   - Always No (`-n`)
-- 🧭 **CamelCase menus** (Install, Remove, Update) for clarity
-- 🖥️ Optional **non-interactive mode** (CLI arguments like `navi install pacman`)
+- 💻 **Command Line Mode** — Run actions directly without menus
+- 🧰 **Automatic Dependency Installation** — Ensures `paru` and `flatpak` are installed if missing
 
 ---
 
 ## 📦 Installation
 
-Clone the repository:
+Install Navi using the provided script:
 
-    git clone https://github.com/PrudviTeja99/navi.git
+```bash
+chmod +x install.sh
+sudo ./install.sh
+```
 
-    cd navi
+🧹 Uninstall
 
-Make it executable:
+To remove Navi and related scripts:
 
-    chmod +x navi
-
-Optionally install system-wide:
-
-    sudo mv navi /usr/local/bin/
-
-Now you can run it anywhere using:
-
-    navi
+```
+sudo ./uninstall.sh
+```
 
 ## 🛠 Dependencies
 
-Ensure the following are installed:
+Navi requires the following packages:
 
-    fzf (fuzzy finder)
+| Dependency | Purpose                        | Required    |
+| ---------- | ------------------------------ | ----------- |
+| `fzf`      | Fuzzy finder used for menus    | ✅ Yes       |
+| `pacman`   | Default system package manager | ✅ Yes       |
+| `paru`     | AUR package helper             | ⚙️ Optional |
+| `flatpak`  | For Flatpak packages           | ⚙️ Optional |
 
-    pacman (comes with Arch/CachyOS)
 
-    paru (AUR helper)
+Install essentials:
 
-    flatpak (optional, for Flatpak updates)
+```
+sudo pacman -S fzf
+```
 
-Install dependencies:
+(Optional):
+```
+sudo pacman -S paru flatpak
+```
 
-    sudo pacman -S fzf paru
 
-(Flatpak is optional, install with sudo pacman -S flatpak)
 ## 🚀 Usage
 Interactive Mode
 
-Just run navi and use fuzzy menus:
+Run:
+```
+navi
+```
 
-    navi
+You’ll see a main menu:
 
-You’ll see:
-
+```
 Select Action:
     Install
     Remove
-    Update
+    System Update
+```
+Choose an action, then select the package source (Pacman, Paru, or Flatpak) if applicable.
 
-Direct CLI Mode
 
-You can skip menus by passing action and source:
 
-#### Install packages from pacman
-    navi install pacman
+## ⚙️ Command Line Mode (Non-interactive)
 
-#### Remove packages from paru
-    navi remove paru
+You can skip menus and directly perform actions.
 
-#### Update everything (pacman, paru, flatpak) with auto-confirm
-    navi update -y
+🔹 Install
+Install packages using:
+```
+navi install <source>
+```
+Examples:
+```
+navi install pacman
+navi install paru
+navi install flatpak
+```
 
-Confirmation Modes
+🔹 Remove
+Remove packages:
+```
+navi remove <source>
+```
+Example:
+```
+navi remove paru
+```
 
-Default: asks before every install/remove/update
+🔹 Update
+Update all packages (from Pacman, Paru, and Flatpak):
+```
+navi update
+```
+Note: The update action does not accept a source argument — it automatically updates all available sources.
 
-Always yes:
+🔹 Confirmation Flags
+| Flag | Description                         |
+| ---- | ----------------------------------- |
+| `-y` | Always confirm “Yes” to all prompts |
+| `-n` | Always answer “No” (skip)           |
 
-    navi install pacman -y
+Examples:
+```
+navi update -y
+navi install pacman -n
+```
 
-Always no:
 
-    navi remove paru -n
+## 🔒 Security Notes
+
+* Requests sudo once and maintains it using a background keep-alive.
+* Uses systemd-inhibit to prevent system sleep during package updates, installs and removals.
+
+## 🧩 Related Scripts
+
+* navi-colors.sh – Provides color-coded logging functions.
+* navi-ensure-source-installed – Ensures paru and flatpak are installed automatically if missing.
 
 ## 📸 Screenshots
 
     (Pending...)
 
-## 🔒 Security Notes
-
-    Navi requests sudo once at the start, then keeps it alive in the background.
-
-    Updates run under systemd-inhibit to prevent system from sleeping.
 
 ## 📄 License
 
 MIT License – feel free to modify and share.
+
+
 ## 🤝 Contributing
 
-Pull requests are welcome! For major changes, open an issue first to discuss.
+* Pull requests are welcome!
+* For major feature proposals, please open an issue first to discuss design or behavior.
+
+
 ## ⭐ Acknowledgements
 
-    Inspired by [Omarchy Linux package UI]
-
-    Built with Arch users in mind
-
-    Thanks to the creators of fzf, paru, and pacman
+* Inspired by Omarchy Linux package UI
+* Thanks to the creators of fzf, paru, flatpak, and pacman
+* Built with ❤️ for Arch/CachyOS users
