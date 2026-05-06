@@ -7,6 +7,9 @@ set -euo pipefail
 
 # Load helper functions
 DEP_SCRIPT_DIR="/usr/local/share/navi"
+# Fallback to local directory if not installed (for development/portable use)
+[[ -d "$DEP_SCRIPT_DIR" ]] || DEP_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DEP_SCRIPT_DIR/navi-ensure-source-installed.sh"
 source "$DEP_SCRIPT_DIR/navi-colors.sh"
@@ -61,7 +64,13 @@ done
 sudo -v
 while true; do sudo -v; sleep 60; done 2>/dev/null &
 SUDO_LOOP_PID=$!
-trap "kill $SUDO_LOOP_PID" EXIT INT TERM
+
+cleanup() {
+    kill "$SUDO_LOOP_PID" 2>/dev/null || true
+    # Clean up short-lived update temp files
+    rm -f /tmp/navi_*_update 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 # --- Check dependencies ---
 for cmd in fzf pacman; do
@@ -90,17 +99,30 @@ PACMAN_UPDATE_PID=""
 AUR_UPDATE_PID=""
 FLATPAK_UPDATE_PID=""
 
-PACMAN_INSTALLED_TMP="/tmp/navi_pacman_installed"
-AUR_INSTALLED_TMP="/tmp/navi_aur_installed"
-FLATPAK_INSTALLED_TMP="/tmp/navi_flatpak_installed"
+# Setup cache and temp directories
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/navi"
+mkdir -p "$CACHE_DIR"
 
-PACMAN_REMOTE_TMP="/tmp/navi_pacman_remote"
-AUR_REMOTE_TMP="/tmp/navi_aur_remote"
-FLATPAK_REMOTE_TMP="/tmp/navi_flatpak_remote"
+# Persistent cache for package lists
+PACMAN_INSTALLED_TMP="$CACHE_DIR/pacman_installed"
+AUR_INSTALLED_TMP="$CACHE_DIR/aur_installed"
+FLATPAK_INSTALLED_TMP="$CACHE_DIR/flatpak_installed"
 
+PACMAN_REMOTE_TMP="$CACHE_DIR/pacman_remote"
+AUR_REMOTE_TMP="$CACHE_DIR/aur_remote"
+FLATPAK_REMOTE_TMP="$CACHE_DIR/flatpak_remote"
+
+# Short-lived temp files for updates
 PACMAN_UPDATE_TMP="/tmp/navi_pacman_update"
 AUR_UPDATE_TMP="/tmp/navi_aur_update"
 FLATPAK_UPDATE_TMP="/tmp/navi_flatpak_update"
+
+# Check if a cache file is still fresh (default 30 minutes)
+is_fresh() {
+    local file="$1"
+    local minutes="${2:-30}"
+    [[ -f "$file" ]] && [[ -n "$(find "$file" -mmin -"$minutes" 2>/dev/null)" ]]
+}
 
 PACMAN_QUERY_CMD="pacman -Qq"
 AUR_QUERY_CMD="paru -Qmq"
@@ -319,7 +341,7 @@ update_packages() {
     [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(< "$FLATPAK_UPDATE_TMP")
 
     # Clean temp files
-    # run_cleanup "$PACMAN_UPDATE_TMP" "$AUR_UPDATE_TMP" "$FLATPAK_UPDATE_TMP"
+    run_cleanup "$PACMAN_UPDATE_TMP" "$AUR_UPDATE_TMP" "$FLATPAK_UPDATE_TMP"
 
     set -e
 
@@ -375,21 +397,21 @@ fi
 if [[ "$action" == "remove" ]]; then
     case "$source" in
         pacman)
-            if [[ ! -f "$PACMAN_INSTALLED_TMP" ]]; then
+            if ! is_fresh "$PACMAN_INSTALLED_TMP"; then
                 fetch_pacman_installed_packages
                 wait $PACMAN_INSTALLED_PID
             fi
              pkg_list=$(< "$PACMAN_INSTALLED_TMP")
             ;;
         paru)   
-            if [[ ! -f "$AUR_INSTALLED_TMP" ]]; then
+            if ! is_fresh "$AUR_INSTALLED_TMP"; then
                 fetch_aur_installed_packages
                 wait $AUR_INSTALLED_PID
             fi
             pkg_list=$(< "$AUR_INSTALLED_TMP")
             ;;
         flatpak) 
-            if [[ ! -f "$FLATPAK_INSTALLED_TMP" ]]; then
+            if ! is_fresh "$FLATPAK_INSTALLED_TMP"; then
                 fetch_flatpak_installed_packages
                 wait $FLATPAK_INSTALLED_PID
             fi
@@ -399,21 +421,21 @@ if [[ "$action" == "remove" ]]; then
 else
     case "$source" in
         pacman) 
-            if [[ ! -f "$PACMAN_REMOTE_TMP" ]]; then
+            if ! is_fresh "$PACMAN_REMOTE_TMP"; then
                 fetch_pacman_remote_packages
                 wait $PACMAN_REMOTE_PID
             fi
             pkg_list=$(< "$PACMAN_REMOTE_TMP")
             ;;
         paru)
-            if [[ ! -f "$AUR_REMOTE_TMP" ]]; then
+            if ! is_fresh "$AUR_REMOTE_TMP"; then
                 fetch_aur_remote_packages
                 wait $AUR_REMOTE_PID
             fi
             pkg_list=$(< "$AUR_REMOTE_TMP")
             ;;
         flatpak)
-            if [[ ! -f "$FLATPAK_REMOTE_TMP" ]]; then
+            if ! is_fresh "$FLATPAK_REMOTE_TMP"; then
                 fetch_flatpak_remote_packages
                 wait $FLATPAK_REMOTE_PID
             fi
