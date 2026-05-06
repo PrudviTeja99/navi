@@ -29,22 +29,39 @@ Think of it as **Omarchy-like**, but for **Arch/CachyOS**, with extra polish. �
 
 ## 📦 Installation
 
-Install Navi using the provided script:
+### The "Arch Way" (Recommended)
+Since Navi is designed for Arch-based systems, the best way to install it is using the provided `PKGBUILD`. This allows your system to manage it like a native package.
+
+```bash
+git clone https://github.com/PrudviTeja99/navi.git
+cd navi
+makepkg -si
+```
+
+### Manual Installation
+You can also use the provided installation script:
 
 ```bash
 chmod +x install.sh
 sudo ./install.sh
 ```
 
-🧹 Uninstall
+---
 
-To remove Navi and related scripts:
+## 🧹 Uninstall
 
+### If installed via PKGBUILD:
+```bash
+sudo pacman -Rs navi-git
 ```
+
+### If installed via script:
+```bash
+chmod +x uninstall.sh
 sudo ./uninstall.sh
 ```
 
-## 🛠 Dependencies
+---
 
 Navi requires the following packages:
 

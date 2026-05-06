@@ -17,6 +17,14 @@ if [[ ! -f "$MAIN_SOURCE" ]]; then
     exit 1
 fi
 
+# Check dependencies before installing
+for cmd in fzf pacman; do
+    if ! command -v "$cmd" &>/dev/null; then
+        redLog "Error: $cmd is required but not installed. Please install it first."
+        exit 1
+    fi
+done
+
 if [[ $EUID -ne 0 ]]; then
     yellowLog "You are not root. Using sudo..."
     SUDO="sudo"

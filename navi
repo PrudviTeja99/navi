@@ -6,9 +6,15 @@
 set -euo pipefail
 
 # Load helper functions
-DEP_SCRIPT_DIR="/usr/local/share/navi"
-# Fallback to local directory if not installed (for development/portable use)
-[[ -d "$DEP_SCRIPT_DIR" ]] || DEP_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Check multiple locations for helper scripts
+if [[ -d "/usr/local/share/navi" ]]; then
+    DEP_SCRIPT_DIR="/usr/local/share/navi"
+elif [[ -d "/usr/share/navi" ]]; then
+    DEP_SCRIPT_DIR="/usr/share/navi"
+else
+    # Fallback to local directory (for development or portable use)
+    DEP_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$DEP_SCRIPT_DIR/navi-ensure-source-installed.sh"
