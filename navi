@@ -129,7 +129,7 @@ AUR_QUERY_CMD="paru -Qmq"
 FLATPAK_QUERY_CMD="flatpak list --app --columns=application"
 
 PACMAN_REMOTE_CMD="pacman -Slq"
-AUR_REMOTE_CMD="paru -Slq --aur"
+AUR_REMOTE_CMD="paru -Slq --aur | awk '{print \$NF}'"
 FLATPAK_REMOTE_CMD="flatpak remote-ls flathub --columns=application"
 
 # --- Parse options ---
@@ -446,6 +446,7 @@ fi
 
 # --- Fuzzy select packages ---
 pkg=$(echo "$pkg_list" | fzf \
+    --ansi \
     --multi \
     --height=100% \
     --layout=reverse \
