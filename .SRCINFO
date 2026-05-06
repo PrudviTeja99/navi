@@ -1,0 +1,19 @@
+pkgbase = navi-git
+	pkgdesc = Interactive TUI wrapper for Pacman, Paru, and Flatpak
+	pkgver = r91.db858b9
+	pkgrel = 1
+	url = https://github.com/PrudviTeja99/navi
+	arch = any
+	license = MIT
+	depends = fzf
+	depends = pacman
+	depends = bash
+	optdepends = paru: for AUR support
+	optdepends = flatpak: for Flatpak support
+	optdepends = systemd: for sleep inhibition during updates
+	provides = navi
+	conflicts = navi
+	source = git+https://github.com/PrudviTeja99/navi.git
+	sha256sums = SKIP
+
+pkgname = navi-git
