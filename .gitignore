@@ -1,0 +1,13 @@
+# Build artifacts
+pkg/
+src/
+*.pkg.tar.zst
+*.pkg.tar.xz
+
+# Cache and temporary files
+/tmp/navi_*
+.cache/navi/
+
+# Other common excludes
+*~
+*.swp
