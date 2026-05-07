@@ -342,9 +342,9 @@ update_packages() {
     [[ $HAS_FLATPAK == true ]] && wait $FLATPAK_UPDATE_PID
 
     # Read results
-    pacman_updates=$(< "$PACMAN_UPDATE_TMP")
-    [[ $HAS_PARU == true ]] && aur_updates=$(< "$AUR_UPDATE_TMP")
-    [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(< "$FLATPAK_UPDATE_TMP")
+    pacman_updates=$(tr -d '\0' < "$PACMAN_UPDATE_TMP")
+    [[ $HAS_PARU == true ]] && aur_updates=$(tr -d '\0' < "$AUR_UPDATE_TMP")
+    [[ $HAS_FLATPAK == true ]] && flatpak_updates=$(tr -d '\0' < "$FLATPAK_UPDATE_TMP")
 
     # Clean temp files
     run_cleanup "$PACMAN_UPDATE_TMP" "$AUR_UPDATE_TMP" "$FLATPAK_UPDATE_TMP"
@@ -407,21 +407,21 @@ if [[ "$action" == "remove" ]]; then
                 fetch_pacman_installed_packages
                 wait $PACMAN_INSTALLED_PID
             fi
-             pkg_list=$(< "$PACMAN_INSTALLED_TMP")
+             pkg_list=$(tr -d '\0' < "$PACMAN_INSTALLED_TMP")
             ;;
         paru)   
             if ! is_fresh "$AUR_INSTALLED_TMP"; then
                 fetch_aur_installed_packages
                 wait $AUR_INSTALLED_PID
             fi
-            pkg_list=$(< "$AUR_INSTALLED_TMP")
+            pkg_list=$(tr -d '\0' < "$AUR_INSTALLED_TMP")
             ;;
         flatpak) 
             if ! is_fresh "$FLATPAK_INSTALLED_TMP"; then
                 fetch_flatpak_installed_packages
                 wait $FLATPAK_INSTALLED_PID
             fi
-            pkg_list=$(< "$FLATPAK_INSTALLED_TMP")
+            pkg_list=$(tr -d '\0' < "$FLATPAK_INSTALLED_TMP")
             ;;
     esac
 else
@@ -431,21 +431,21 @@ else
                 fetch_pacman_remote_packages
                 wait $PACMAN_REMOTE_PID
             fi
-            pkg_list=$(< "$PACMAN_REMOTE_TMP")
+            pkg_list=$(tr -d '\0' < "$PACMAN_REMOTE_TMP")
             ;;
         paru)
             if ! is_fresh "$AUR_REMOTE_TMP"; then
                 fetch_aur_remote_packages
                 wait $AUR_REMOTE_PID
             fi
-            pkg_list=$(< "$AUR_REMOTE_TMP")
+            pkg_list=$(tr -d '\0' < "$AUR_REMOTE_TMP")
             ;;
         flatpak)
             if ! is_fresh "$FLATPAK_REMOTE_TMP"; then
                 fetch_flatpak_remote_packages
                 wait $FLATPAK_REMOTE_PID
             fi
-            pkg_list=$(< "$FLATPAK_REMOTE_TMP")
+            pkg_list=$(tr -d '\0' < "$FLATPAK_REMOTE_TMP")
             ;;
     esac
 fi
