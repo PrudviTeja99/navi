@@ -155,9 +155,9 @@ action_input="${1:-}"
 case "$action_input" in
     i) action="install" ;;
     r) action="remove" ;;
-    f) action="refresh" ;; 
-    u) action="update" ;;
-    install|remove|update) action="$action_input" ;;
+    f|refresh) action="refresh" ;; 
+    u|update) action="update" ;;
+    install|remove) action="$action_input" ;;
     "") 
         # Map display -> internal action
         mapfile -t ACTIONS < <(printf "Install:install\nRemove:remove\nSystem Update:update")
@@ -297,16 +297,16 @@ pkg_action() {
 update_all() {
 
     greenLog "--- Updating Pacman Packages ---"
-    $pacman_cmd
+    eval "$pacman_cmd"
 
     if $HAS_PARU; then
         greenLog "--- Updating AUR Packages ---"
-        $paru_cmd
+        eval "$paru_cmd"
     fi
 
     if $HAS_FLATPAK; then
         greenLog "--- Updating Flatpak Packages ---"
-        $flatpak_cmd
+        eval "$flatpak_cmd"
     fi
 
     greenLog "All updates completed"
