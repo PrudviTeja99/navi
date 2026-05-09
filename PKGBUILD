@@ -1,5 +1,5 @@
 # Maintainer: Prudvi Teja <https://github.com/PrudviTeja99>
-pkgname=navi
+pkgname=navi-pm
 pkgver=1.0.3
 pkgrel=1
 pkgdesc="Interactive TUI wrapper for Pacman, Paru, and Flatpak (Local Dev Version)"
@@ -10,6 +10,11 @@ depends=('fzf' 'pacman' 'bash')
 optdepends=('paru: for AUR support'
             'flatpak: for Flatpak support'
             'systemd: for sleep inhibition during updates')
+
+
+onflicts=('navi')
+provides=('navi')
+
 # Use local files
 source=('navi'
         'navi-colors.sh'
